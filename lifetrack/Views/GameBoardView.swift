@@ -3,22 +3,36 @@ import SwiftUI
 struct GameBoardView: View {
     @Binding var players: [Player]
 
+    private static let contentInset: CGFloat = 24
+
     var body: some View {
         GeometryReader { geo in
             let layout = layoutForPlayerCount(players.count, in: geo.size)
+            let uniformDotSize = Self.uniformDotSize(for: layout)
 
             ZStack {
                 ForEach(layout.indices, id: \.self) { i in
                     let slot = layout[i]
                     PlayerCellView(
                         lifeTotal: $players[i].lifeTotal,
-                        rotation: slot.rotation
+                        rotation: slot.rotation,
+                        maxDotSize: uniformDotSize
                     )
                     .frame(width: slot.frame.width, height: slot.frame.height)
                     .position(x: slot.frame.midX, y: slot.frame.midY)
                 }
             }
         }
+    }
+
+    // Find the smallest dot size any cell would produce, so all cells match.
+    private static func uniformDotSize(for layout: [Slot]) -> CGFloat {
+        layout.map { slot in
+            let swapped = abs(Int(slot.rotation.degrees)) == 90
+            let contentW = (swapped ? slot.frame.height : slot.frame.width) - contentInset * 2
+            let contentH = (swapped ? slot.frame.width : slot.frame.height) - contentInset * 2
+            return DotNumberView.dotSize(fitting: CGSize(width: contentW, height: contentH))
+        }.min() ?? 0
     }
 
     // MARK: - Layout

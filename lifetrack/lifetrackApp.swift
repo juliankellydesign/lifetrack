@@ -6,12 +6,20 @@
 //
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 @main
 struct lifetrackApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onAppear {
+                    #if canImport(UIKit)
+                    UIApplication.shared.isIdleTimerDisabled = true
+                    #endif
+                }
         }
     }
 }

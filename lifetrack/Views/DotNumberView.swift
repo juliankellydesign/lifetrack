@@ -3,6 +3,7 @@ import SwiftUI
 struct DotNumberView: View {
     let number: Int
     var direction: ChangeDirection? = nil
+    var maxDotSize: CGFloat? = nil
 
     // Digit values to render, e.g. 40 → [4, 0], -3 → [-1, 3]
     // -1 represents the minus sign
@@ -20,6 +21,20 @@ struct DotNumberView: View {
         return result
     }
 
+    // Compute the dot size that would fit a given content area.
+    // Used by GameBoardView to find a uniform cap across all cells.
+    static func dotSize(fitting size: CGSize, digitCount: Int = 2) -> CGFloat {
+        let count = CGFloat(digitCount)
+        let spacingRatio: CGFloat = 0.25
+        let gapRatio: CGFloat = 1.2
+        let cols = count * CGFloat(DotPatterns.columns)
+            + count * CGFloat(DotPatterns.columns - 1) * spacingRatio
+            + (count - 1) * gapRatio
+        let rows = CGFloat(DotPatterns.rows)
+            + CGFloat(DotPatterns.rows - 1) * spacingRatio
+        return min(size.width / cols, size.height / rows)
+    }
+
     var body: some View {
         GeometryReader { geo in
             let digits = digitValues
@@ -34,7 +49,7 @@ struct DotNumberView: View {
             let rows = CGFloat(DotPatterns.rows)
                 + CGFloat(DotPatterns.rows - 1) * spacingRatio
 
-            let dotSize = min(geo.size.width / cols, geo.size.height / rows)
+            let dotSize = min(geo.size.width / cols, geo.size.height / rows, maxDotSize ?? .infinity)
             let dotSpacing = dotSize * spacingRatio
             let digitGap = dotSize * gapRatio
 
