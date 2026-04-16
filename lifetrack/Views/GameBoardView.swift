@@ -2,6 +2,9 @@ import SwiftUI
 
 struct GameBoardView: View {
     @Binding var players: [Player]
+    var onEditRequested: ((Int, Angle) -> Void)? = nil
+    var editingIndex: Int? = nil
+    var dotNamespace: Namespace.ID? = nil
 
     private static let contentInset: CGFloat = 24
 
@@ -16,7 +19,11 @@ struct GameBoardView: View {
                     PlayerCellView(
                         lifeTotal: $players[i].lifeTotal,
                         rotation: slot.rotation,
-                        maxDotSize: uniformDotSize
+                        maxDotSize: uniformDotSize,
+                        onEditRequested: { onEditRequested?(i, slot.rotation) },
+                        isBeingEdited: editingIndex == i,
+                        dotNamespace: dotNamespace,
+                        playerId: i
                     )
                     .frame(width: slot.frame.width, height: slot.frame.height)
                     .position(x: slot.frame.midX, y: slot.frame.midY)

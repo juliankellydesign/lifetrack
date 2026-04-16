@@ -16,9 +16,14 @@ struct PlayerCellView: View {
     @Binding var lifeTotal: Int
     let rotation: Angle
     var maxDotSize: CGFloat? = nil
+    var onEditRequested: (() -> Void)? = nil
+    var isBeingEdited: Bool = false
+    var dotNamespace: Namespace.ID? = nil
+    var playerId: Int = 0
     @State private var changeDirection: ChangeDirection?
     @State private var tiltAngle: Double = 0
     @State private var repeatTimer: Timer?
+    @State private var centerHoldTimer: Timer?
 
     var body: some View {
         GeometryReader { geo in
@@ -35,10 +40,9 @@ struct PlayerCellView: View {
                             .strokeBorder(Color.gray.opacity(0.4), lineWidth: 1)
                     )
 
-                DotNumberView(number: lifeTotal, direction: changeDirection, maxDotSize: maxDotSize)
-                    .frame(width: contentW, height: contentH)
-                    .rotationEffect(rotation)
-                    .frame(width: geo.size.width, height: geo.size.height)
+                if !isBeingEdited {
+                    dotContent(contentW: contentW, contentH: contentH, geoSize: geo.size)
+                }
             }
             .rotation3DEffect(
                 .degrees(tiltAngle),
@@ -50,30 +54,70 @@ struct PlayerCellView: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        guard repeatTimer == nil else { return }
-                        let increment = isIncrement(at: value.startLocation, in: geo.size)
-                        tiltAngle = (increment ? 1.0 : -1.0) * 7
-                        applyChange(increment: increment)
-                        repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in
-                            applyChange(increment: increment)
+                        guard repeatTimer == nil && centerHoldTimer == nil else { return }
+                        let zone = tapZone(at: value.startLocation, in: geo.size)
+                        switch zone {
+                        case .left:
+                            tiltAngle = -7
+                            applyChange(increment: false)
+                            repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in
+                                applyChange(increment: false)
+                            }
+                        case .right:
+                            tiltAngle = 7
+                            applyChange(increment: true)
+                            repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in
+                                applyChange(increment: true)
+                            }
+                        case .center:
+                            centerHoldTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+                                onEditRequested?()
+                                centerHoldTimer = nil
+                            }
                         }
                     }
                     .onEnded { _ in
                         repeatTimer?.invalidate()
                         repeatTimer = nil
+                        centerHoldTimer?.invalidate()
+                        centerHoldTimer = nil
                         tiltAngle = 0
                     }
             )
         }
     }
 
-    private func isIncrement(at location: CGPoint, in size: CGSize) -> Bool {
+    // Maps screen touch position to the player's left-to-right axis (0 = left, 1 = right)
+    private func playerFraction(at location: CGPoint, in size: CGSize) -> CGFloat {
         let deg = Int(rotation.degrees)
         switch deg {
-        case 90: return location.y > size.height / 2
-        case -90: return location.y < size.height / 2
-        case 180, -180: return location.x < size.width / 2
-        default: return location.x > size.width / 2
+        case 90:    return location.y / size.height
+        case -90:   return 1 - (location.y / size.height)
+        case 180, -180: return 1 - (location.x / size.width)
+        default:    return location.x / size.width
+        }
+    }
+
+    private enum TapZone { case left, center, right }
+
+    private func tapZone(at location: CGPoint, in size: CGSize) -> TapZone {
+        let f = playerFraction(at: location, in: size)
+        if f < 1.0 / 3.0 { return .left }
+        if f > 2.0 / 3.0 { return .right }
+        return .center
+    }
+
+    @ViewBuilder
+    private func dotContent(contentW: CGFloat, contentH: CGFloat, geoSize: CGSize) -> some View {
+        let dots = DotNumberView(number: lifeTotal, direction: changeDirection, maxDotSize: maxDotSize)
+            .frame(width: contentW, height: contentH)
+            .rotationEffect(rotation)
+            .frame(width: geoSize.width, height: geoSize.height)
+
+        if let ns = dotNamespace {
+            dots.matchedGeometryEffect(id: playerId, in: ns)
+        } else {
+            dots
         }
     }
 

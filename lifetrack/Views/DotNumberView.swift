@@ -4,6 +4,7 @@ struct DotNumberView: View {
     let number: Int
     var direction: ChangeDirection? = nil
     var maxDotSize: CGFloat? = nil
+    var animateEntrance: Bool = true
 
     // Digit values to render, e.g. 40 → [4, 0], -3 → [-1, 3]
     // -1 represents the minus sign
@@ -61,7 +62,7 @@ struct DotNumberView: View {
 
             HStack(spacing: digitGap) {
                 ForEach(Array(digits.enumerated()), id: \.offset) { _, digit in
-                    DotDigitView(digit: digit, dotSize: dotSize, spacing: dotSpacing, direction: direction)
+                    DotDigitView(digit: digit, dotSize: dotSize, spacing: dotSpacing, direction: direction, animateEntrance: animateEntrance)
                 }
             }
             .frame(width: totalWidth, height: totalHeight)
