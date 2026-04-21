@@ -1,71 +1,67 @@
-import SwiftUI
+import UIKit
 
-struct DotDigitView: View {
-    let digit: Int
-    let dotSize: CGFloat
-    let spacing: CGFloat
-    var direction: ChangeDirection? = nil
-    var animateEntrance: Bool = true
+class DotDigitView: UIView {
+    private var dotViews: [UIView] = []
+    private var currentDigit: Int?
 
-    var body: some View {
-        let pattern = DotPatterns.pattern(for: digit)
+    func configure(dotSize: CGFloat, spacing: CGFloat) {
+        dotViews.forEach { $0.removeFromSuperview() }
+        dotViews.removeAll()
+        currentDigit = nil
+
         let step = dotSize + spacing
+        for i in 0..<(DotPatterns.rows * DotPatterns.columns) {
+            let row = i / DotPatterns.columns
+            let col = i % DotPatterns.columns
 
-        ZStack(alignment: .topLeading) {
-            ForEach(0..<DotPatterns.rows * DotPatterns.columns, id: \.self) { i in
-                let row = i / DotPatterns.columns
-                let col = i % DotPatterns.columns
-                let isActive = pattern[i]
+            let dot = UIView(frame: CGRect(
+                x: CGFloat(col) * step,
+                y: CGFloat(row) * step,
+                width: dotSize,
+                height: dotSize
+            ))
+            dot.backgroundColor = .white
+            dot.layer.cornerRadius = dotSize / 2
+            dot.transform = CGAffineTransform(scaleX: 0.01, y: 0.01)
+            dot.alpha = 0
+            addSubview(dot)
+            dotViews.append(dot)
+        }
 
-                DotView(
-                    isActive: isActive,
-                    size: dotSize,
-                    delay: direction?.delay(forRow: row) ?? 0,
-                    animateEntrance: animateEntrance
-                )
-                .offset(
-                    x: CGFloat(col) * step,
-                    y: CGFloat(row) * step
-                )
+        let totalW = CGFloat(DotPatterns.columns) * dotSize + CGFloat(DotPatterns.columns - 1) * spacing
+        let totalH = CGFloat(DotPatterns.rows) * dotSize + CGFloat(DotPatterns.rows - 1) * spacing
+        bounds.size = CGSize(width: totalW, height: totalH)
+    }
+
+    func setDigit(_ digit: Int, direction: ChangeDirection?, animated: Bool) {
+        let pattern = DotPatterns.pattern(for: digit)
+        let oldPattern: [Bool]? = currentDigit.map { DotPatterns.pattern(for: $0) }
+        currentDigit = digit
+
+        for i in 0..<dotViews.count {
+            let isActive = pattern[i]
+            let wasActive = oldPattern?[i] ?? false
+
+            if oldPattern != nil && wasActive == isActive { continue }
+
+            let row = i / DotPatterns.columns
+            let delay = animated ? (direction?.delay(forRow: row) ?? 0) : 0
+            let scale: CGAffineTransform = isActive ? .identity : CGAffineTransform(scaleX: 0.01, y: 0.01)
+            let alpha: CGFloat = isActive ? 1.0 : 0.0
+
+            if animated {
+                UIView.animate(withDuration: 0.3, delay: delay, usingSpringWithDamping: 0.7,
+                               initialSpringVelocity: 0, options: .beginFromCurrentState) {
+                    self.dotViews[i].transform = scale
+                    self.dotViews[i].alpha = alpha
+                }
+            } else {
+                dotViews[i].transform = scale
+                dotViews[i].alpha = alpha
             }
         }
-        .frame(
-            width: CGFloat(DotPatterns.columns) * dotSize + CGFloat(DotPatterns.columns - 1) * spacing,
-            height: CGFloat(DotPatterns.rows) * dotSize + CGFloat(DotPatterns.rows - 1) * spacing,
-            alignment: .topLeading
-        )
     }
-}
 
-// Individual dot with its own animation state, so each dot can
-// animate independently with a per-row delay.
-private struct DotView: View {
-    let isActive: Bool
-    let size: CGFloat
-    let delay: Double
-    var animateEntrance: Bool = true
-
-    @State private var isShowing = false
-
-    var body: some View {
-        Circle()
-            .fill(Color.white)
-            .frame(width: size, height: size)
-            .scaleEffect(isShowing ? 1.0 : 0.01)
-            .opacity(isShowing ? 1.0 : 0.0)
-            .onAppear {
-                if animateEntrance {
-                    withAnimation(.spring(duration: 0.3, bounce: 0.3).delay(delay)) {
-                        isShowing = isActive
-                    }
-                } else {
-                    isShowing = isActive
-                }
-            }
-            .onChange(of: isActive) { _, newValue in
-                withAnimation(.spring(duration: 0.3, bounce: 0.3).delay(delay)) {
-                    isShowing = newValue
-                }
-            }
-    }
+    var contentWidth: CGFloat { bounds.width }
+    var contentHeight: CGFloat { bounds.height }
 }

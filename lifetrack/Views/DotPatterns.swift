@@ -1,10 +1,21 @@
 import Foundation
 
+enum ChangeDirection {
+    case increasing, decreasing
+
+    func delay(forRow row: Int) -> Double {
+        let interval = 0.035
+        switch self {
+        case .decreasing: return Double(row) * interval
+        case .increasing: return Double(DotPatterns.rows - 1 - row) * interval
+        }
+    }
+}
+
 enum DotPatterns {
     static let columns = 5
     static let rows = 7
 
-    // 5×7 grid per digit, stored row-major. Matches the visual shape directly.
     private static let raw: [[Int]] = [
         // 0
         [0,1,1,1,0,
@@ -88,7 +99,6 @@ enum DotPatterns {
          0,1,1,0,0],
     ]
 
-    // Minus sign (same 5×7 grid)
     private static let rawMinus: [Int] = [
         0,0,0,0,0,
         0,0,0,0,0,
