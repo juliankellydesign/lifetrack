@@ -1,6 +1,8 @@
 import UIKit
 
 class PlayerCellView: UIView {
+    static let contentInset: CGFloat = 12
+
     private(set) var lifeTotal: Int = Player.defaultLife
     var rotation: CGFloat = 0
     var maxDotSize: CGFloat? {
@@ -13,7 +15,6 @@ class PlayerCellView: UIView {
     }
 
     let dotNumberView = DotNumberView()
-    private let backgroundView = UIView()
     private var changeDirection: ChangeDirection?
     private var repeatTimer: Timer?
     private var centerHoldTimer: Timer?
@@ -32,22 +33,14 @@ class PlayerCellView: UIView {
     }
 
     private func setup() {
-        backgroundView.backgroundColor = UIColor.white.withAlphaComponent(0.08)
-        backgroundView.layer.cornerRadius = 12
-        backgroundView.layer.borderWidth = 1
-        backgroundView.layer.borderColor = UIColor.gray.withAlphaComponent(0.4).cgColor
-        backgroundView.isUserInteractionEnabled = false
-        addSubview(backgroundView)
-
         dotNumberView.isUserInteractionEnabled = false
         addSubview(dotNumberView)
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        backgroundView.frame = bounds
 
-        let inset: CGFloat = 24
+        let inset = PlayerCellView.contentInset
         let swapped = abs(Int(rotation)) == 90
         let contentW = (swapped ? bounds.height : bounds.width) - inset * 2
         let contentH = (swapped ? bounds.width : bounds.height) - inset * 2
