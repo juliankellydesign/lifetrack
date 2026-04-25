@@ -93,18 +93,30 @@ class LifeInputOverlay: UIView {
         isHidden = true
     }
 
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        setNeedsLayout()
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         guard !isHidden else { return }
 
+        let insets = safeAreaInsets
+        let safeW = bounds.width - insets.left - insets.right
+        let safeH = bounds.height - insets.top - insets.bottom
+
         let isHorizontal = abs(Int(rotation)) == 90
         let rotRad = rotation * .pi / 180
-        let contentW = isHorizontal ? bounds.height : bounds.width
-        let contentH = isHorizontal ? bounds.width : bounds.height
+        let contentW = isHorizontal ? safeH : safeW
+        let contentH = isHorizontal ? safeW : safeH
 
         contentContainer.transform = .identity
         contentContainer.bounds = CGRect(x: 0, y: 0, width: contentW, height: contentH)
-        contentContainer.center = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
+        contentContainer.center = CGPoint(
+            x: insets.left + safeW / 2,
+            y: insets.top + safeH / 2
+        )
 
         if isHorizontal {
             let padW = contentW * 0.38

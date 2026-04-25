@@ -5,7 +5,8 @@ class GameBoardView: UIView {
     var onEditRequested: ((Int, CGFloat) -> Void)?
     var onLifeChanged: ((Int, Int) -> Void)?
 
-    private static let contentInset: CGFloat = 24
+    private static let contentInset: CGFloat = PlayerCellView.contentInset
+    private static let gap: CGFloat = 20
 
     private struct Slot {
         let frame: CGRect
@@ -90,7 +91,7 @@ class GameBoardView: UIView {
     }
 
     private func layoutSlots(for count: Int, in size: CGSize) -> [Slot] {
-        let pad: CGFloat = 6
+        let pad = Self.gap
         let w = size.width
         let h = size.height
         let halfW = (w - pad) / 2
@@ -120,11 +121,11 @@ class GameBoardView: UIView {
         case 5:
             let rowH = (h - 2 * pad) / 3
             return [
-                Slot(frame: CGRect(x: 0, y: 0, width: w, height: rowH), rotationDegrees: 180),
+                Slot(frame: CGRect(x: 0, y: 0, width: halfW, height: rowH), rotationDegrees: 90),
+                Slot(frame: CGRect(x: halfW + pad, y: 0, width: halfW, height: rowH), rotationDegrees: -90),
                 Slot(frame: CGRect(x: 0, y: rowH + pad, width: halfW, height: rowH), rotationDegrees: 90),
                 Slot(frame: CGRect(x: halfW + pad, y: rowH + pad, width: halfW, height: rowH), rotationDegrees: -90),
-                Slot(frame: CGRect(x: 0, y: 2 * (rowH + pad), width: halfW, height: rowH), rotationDegrees: 90),
-                Slot(frame: CGRect(x: halfW + pad, y: 2 * (rowH + pad), width: halfW, height: rowH), rotationDegrees: -90),
+                Slot(frame: CGRect(x: 0, y: 2 * (rowH + pad), width: w, height: rowH), rotationDegrees: 0),
             ]
         case 6:
             let rowH = (h - 3 * pad) / 4
