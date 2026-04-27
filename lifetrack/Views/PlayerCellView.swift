@@ -11,10 +11,16 @@ class PlayerCellView: UIView {
     var onEditRequested: (() -> Void)?
     var onLifeChanged: ((Int) -> Void)?
     var isBeingEdited: Bool = false {
-        didSet { dotNumberView.isHidden = isBeingEdited }
+        didSet {
+            dotNumberView.isHidden = isBeingEdited
+            damageRow.isHidden = isBeingEdited
+        }
     }
 
+    private let contentContainer = UIView()
     let dotNumberView = DotNumberView()
+    let damageRow = CommanderDamageRowView()
+
     private var changeDirection: ChangeDirection?
     private var repeatTimer: Timer?
     private var centerHoldTimer: Timer?
@@ -33,8 +39,10 @@ class PlayerCellView: UIView {
     }
 
     private func setup() {
-        dotNumberView.isUserInteractionEnabled = false
-        addSubview(dotNumberView)
+        contentContainer.isUserInteractionEnabled = false
+        addSubview(contentContainer)
+        contentContainer.addSubview(dotNumberView)
+        contentContainer.addSubview(damageRow)
     }
 
     override func layoutSubviews() {
@@ -45,16 +53,40 @@ class PlayerCellView: UIView {
         let contentW = (swapped ? bounds.height : bounds.width) - inset * 2
         let contentH = (swapped ? bounds.width : bounds.height) - inset * 2
 
-        dotNumberView.transform = .identity
-        dotNumberView.bounds = CGRect(x: 0, y: 0, width: contentW, height: contentH)
-        dotNumberView.center = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
-        dotNumberView.transform = CGAffineTransform(rotationAngle: rotation * .pi / 180)
+        contentContainer.transform = .identity
+        contentContainer.bounds = CGRect(x: 0, y: 0, width: contentW, height: contentH)
+        contentContainer.center = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
+
+        let badgeRowH = damageRowHeight(forContentHeight: contentH)
+        let dotH = contentH - badgeRowH
+
+        dotNumberView.frame = CGRect(x: 0, y: 0, width: contentW, height: dotH)
+        damageRow.frame = CGRect(x: 0, y: dotH, width: contentW, height: badgeRowH)
+
+        contentContainer.transform = CGAffineTransform(rotationAngle: rotation * .pi / 180)
+    }
+
+    /// Height of the area reserved for the commander damage row inside a cell.
+    /// Exposed statically so GameBoardView can subtract it when computing dot sizes.
+    static func damageRowHeight(forContentHeight contentH: CGFloat) -> CGFloat {
+        let h = contentH * CommanderDamageRowView.heightFraction
+        return min(max(h, CommanderDamageRowView.minHeight), CommanderDamageRowView.maxHeight)
+    }
+
+    private func damageRowHeight(forContentHeight contentH: CGFloat) -> CGFloat {
+        Self.damageRowHeight(forContentHeight: contentH)
     }
 
     func setLifeTotal(_ value: Int, direction: ChangeDirection?, animated: Bool) {
         lifeTotal = value
         changeDirection = direction
         dotNumberView.updateNumber(value, direction: direction, animated: animated)
+    }
+
+    /// Configures the commander damage badges. Pass empty `opponentIds` to hide the row.
+    func setCommanderDamage(opponentIds: [Int], playerCount: Int, damages: [Int]) {
+        damageRow.configure(opponentIds: opponentIds, playerCount: playerCount, damages: damages)
+        damageRow.setBadgesUserInteractionEnabled(false)
     }
 
     // MARK: - Touch handling

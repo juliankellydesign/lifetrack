@@ -1,20 +1,27 @@
 import UIKit
 
+struct LifeInputResult {
+    var lifeTotal: Int
+    var commanderDamage: [Int: Int]
+}
+
 class LifeInputOverlay: UIView {
-    var onDismiss: ((Int) -> Void)?
+    var onDismiss: ((LifeInputResult) -> Void)?
 
     private let contentContainer = UIView()
     let dotNumberView = DotNumberView()
+    let damageRow = CommanderDamageRowView()
     let numberPadView = NumberPadView()
 
     private var inputText = ""
-    private var currentLifeTotal: Int = 0
+    private var lifeTotal: Int = 0
+    private var commanderDamage: [Int: Int] = [:]
     private(set) var rotation: CGFloat = 0
     private var direction: ChangeDirection?
     private var finalDotCenter: CGPoint = .zero
 
     private var displayNumber: Int {
-        if inputText.isEmpty { return currentLifeTotal }
+        if inputText.isEmpty { return lifeTotal }
         return Int(inputText) ?? 0
     }
 
@@ -33,14 +40,27 @@ class LifeInputOverlay: UIView {
         alpha = 0
 
         addSubview(contentContainer)
+        dotNumberView.isUserInteractionEnabled = false
         contentContainer.addSubview(dotNumberView)
+        contentContainer.addSubview(damageRow)
         numberPadView.onKey = { [weak self] key in self?.handleKey(key) }
         contentContainer.addSubview(numberPadView)
+
+        damageRow.onAdjustDamage = { [weak self] opponentId, delta in
+            self?.adjustDamage(forOpponent: opponentId, by: delta)
+        }
     }
 
     /// Configure state and lay out without animating; caller drives the transition.
-    func prepare(lifeTotal: Int, rotation: CGFloat) {
-        currentLifeTotal = lifeTotal
+    func prepare(
+        lifeTotal: Int,
+        commanderDamage: [Int: Int],
+        opponentIds: [Int],
+        playerCount: Int,
+        rotation: CGFloat
+    ) {
+        self.lifeTotal = lifeTotal
+        self.commanderDamage = commanderDamage
         self.rotation = rotation
         inputText = ""
         direction = nil
@@ -48,6 +68,11 @@ class LifeInputOverlay: UIView {
         alpha = 1
         backgroundColor = UIColor.black.withAlphaComponent(0)
         numberPadView.alpha = 0
+        damageRow.alpha = 0
+
+        let damages = opponentIds.map { commanderDamage[$0] ?? 0 }
+        damageRow.configure(opponentIds: opponentIds, playerCount: playerCount, damages: damages)
+        damageRow.setBadgesUserInteractionEnabled(true)
 
         dotNumberView.transform = .identity
         setNeedsLayout()
@@ -58,8 +83,6 @@ class LifeInputOverlay: UIView {
     }
 
     /// Position the overlay's dotNumberView so its rendered dots match a source dot pattern visually.
-    /// Uses uniform scale (so dots stay circular) and center alignment (since each dot pattern is
-    /// centered in its own dotNumberView bounds).
     func placeDotNumberView(visualCenter: CGPoint, sourceDotSize: CGFloat) {
         let local = contentContainerLocal(for: visualCenter)
         let ovlDotSize = dotNumberView.actualDotSize
@@ -70,7 +93,6 @@ class LifeInputOverlay: UIView {
     }
 
     /// Reset the dotNumberView to its laid-out position with identity transform.
-    /// Does not relayout (which would corrupt bounds while transform is non-identity).
     func resetDotNumberViewToFinal() {
         dotNumberView.transform = .identity
         dotNumberView.center = finalDotCenter
@@ -80,12 +102,14 @@ class LifeInputOverlay: UIView {
     func presentChrome() {
         backgroundColor = .black
         numberPadView.alpha = 1
+        damageRow.alpha = 1
     }
 
     /// Fade chrome away. Call inside an animation block.
     func dismissChrome() {
         backgroundColor = UIColor.black.withAlphaComponent(0)
         numberPadView.alpha = 0
+        damageRow.alpha = 0
     }
 
     func finishDismiss() {
@@ -118,17 +142,23 @@ class LifeInputOverlay: UIView {
             y: insets.top + safeH / 2
         )
 
+        let badgeRowH: CGFloat = min(max(contentH * 0.13, 56), 84)
+
         if isHorizontal {
             let padW = contentW * 0.38
             let dotW = contentW - padW
 
-            dotNumberView.frame = CGRect(x: 24, y: 24, width: dotW - 48, height: contentH - 48)
+            let dotAreaH = contentH - badgeRowH - 32
+            dotNumberView.frame = CGRect(x: 24, y: 24, width: dotW - 48, height: dotAreaH)
+            damageRow.frame = CGRect(x: 24, y: 24 + dotAreaH, width: dotW - 48, height: badgeRowH)
             numberPadView.frame = CGRect(x: dotW + 16, y: 16, width: padW - 32, height: contentH - 32)
         } else {
             let padH = contentH * 0.45
             let dotH = contentH - padH
 
-            dotNumberView.frame = CGRect(x: 24, y: 24, width: contentW - 48, height: dotH - 48)
+            let dotAreaH = dotH - badgeRowH - 32
+            dotNumberView.frame = CGRect(x: 24, y: 24, width: contentW - 48, height: dotAreaH)
+            damageRow.frame = CGRect(x: 24, y: 24 + dotAreaH, width: contentW - 48, height: badgeRowH)
             numberPadView.frame = CGRect(x: 24, y: dotH, width: contentW - 48, height: padH - 64)
         }
 
@@ -137,7 +167,6 @@ class LifeInputOverlay: UIView {
 
     // MARK: - Coordinate helpers
 
-    /// Convert a point in this overlay's coordinate space to contentContainer's local (unrotated) coords.
     private func contentContainerLocal(for point: CGPoint) -> CGPoint {
         let dx = point.x - contentContainer.center.x
         let dy = point.y - contentContainer.center.y
@@ -149,7 +178,17 @@ class LifeInputOverlay: UIView {
         return CGPoint(x: lx, y: ly)
     }
 
-    // MARK: - Input
+    // MARK: - Damage adjustment
+
+    private func adjustDamage(forOpponent opponentId: Int, by delta: Int) {
+        let current = commanderDamage[opponentId] ?? 0
+        let next = max(0, current + delta)
+        guard next != current else { return }
+        commanderDamage[opponentId] = next
+        damageRow.setDamage(next, forOpponent: opponentId)
+    }
+
+    // MARK: - Numpad input (life only)
 
     private func handleKey(_ key: NumberPadKey) {
         let oldNumber = displayNumber
@@ -160,22 +199,22 @@ class LifeInputOverlay: UIView {
             }
         case .backspace:
             if inputText.isEmpty {
-                let s = String(currentLifeTotal)
+                let s = String(lifeTotal)
                 inputText = String(s.dropLast())
             } else {
                 inputText.removeLast()
             }
         case .confirm:
             if !inputText.isEmpty, let value = Int(inputText) {
-                currentLifeTotal = value
+                lifeTotal = value
             }
-            onDismiss?(currentLifeTotal)
+            onDismiss?(LifeInputResult(lifeTotal: lifeTotal, commanderDamage: commanderDamage))
             return
         }
         let newNumber = displayNumber
         if newNumber != oldNumber {
             direction = newNumber > oldNumber ? .increasing : .decreasing
         }
-        dotNumberView.updateNumber(displayNumber, direction: direction, animated: true)
+        dotNumberView.updateNumber(newNumber, direction: direction, animated: true)
     }
 }

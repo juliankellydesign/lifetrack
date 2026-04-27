@@ -33,7 +33,21 @@ class GameBoardView: UIView {
             addSubview(cell)
             cellViews.append(cell)
         }
+        applyCommanderDamage(from: players)
         setNeedsLayout()
+    }
+
+    /// Refresh every cell's badge row from the current `players` array.
+    /// Each cell shows badges for all *other* players in stable id order.
+    func applyCommanderDamage(from players: [Player]) {
+        for (i, player) in players.enumerated() where i < cellViews.count {
+            let opponents = players.filter { $0.id != player.id }.sorted(by: { $0.id < $1.id })
+            cellViews[i].setCommanderDamage(
+                opponentIds: opponents.map { $0.id },
+                playerCount: players.count,
+                damages: opponents.map { player.damage(from: $0.id) }
+            )
+        }
     }
 
     func updatePlayer(at index: Int, lifeTotal: Int, direction: ChangeDirection? = nil, animated: Bool = false) {
@@ -86,7 +100,9 @@ class GameBoardView: UIView {
             let swapped = abs(Int(slot.rotationDegrees)) == 90
             let contentW = (swapped ? slot.frame.height : slot.frame.width) - contentInset * 2
             let contentH = (swapped ? slot.frame.width : slot.frame.height) - contentInset * 2
-            return DotNumberView.dotSize(fitting: CGSize(width: contentW, height: contentH))
+            let badgeRowH = PlayerCellView.damageRowHeight(forContentHeight: contentH)
+            let dotH = contentH - badgeRowH
+            return DotNumberView.dotSize(fitting: CGSize(width: contentW, height: dotH))
         }.min() ?? 0
     }
 
