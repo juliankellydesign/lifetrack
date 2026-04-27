@@ -64,8 +64,8 @@ class GameViewController: UIViewController {
 
     private func setupOverlay() {
         overlayView.isHidden = true
-        overlayView.onDismiss = { [weak self] newLife in
-            self?.dismissOverlay(newLife: newLife)
+        overlayView.onDismiss = { [weak self] result in
+            self?.dismissOverlay(result: result)
         }
         view.addSubview(overlayView)
     }
@@ -140,7 +140,16 @@ class GameViewController: UIViewController {
         let cellDotSize = cellDotView.actualDotSize
 
         gameBoardView.setEditing(index: index)
-        overlayView.prepare(lifeTotal: players[index].lifeTotal, rotation: rotation)
+
+        let player = players[index]
+        let opponents = players.filter { $0.id != player.id }.sorted(by: { $0.id < $1.id })
+        overlayView.prepare(
+            lifeTotal: player.lifeTotal,
+            commanderDamage: player.commanderDamage,
+            opponentIds: opponents.map { $0.id },
+            playerCount: players.count,
+            rotation: rotation
+        )
 
         let overlayCenter = overlayView.convert(cellVisualCenter, from: view)
         overlayView.placeDotNumberView(visualCenter: overlayCenter, sourceDotSize: cellDotSize)
@@ -156,12 +165,14 @@ class GameViewController: UIViewController {
         }
     }
 
-    private func dismissOverlay(newLife: Int) {
+    private func dismissOverlay(result: LifeInputResult) {
         guard let index = editingIndex,
               let cell = gameBoardView.cellView(at: index) else { return }
 
-        players[index].lifeTotal = newLife
-        gameBoardView.updatePlayer(at: index, lifeTotal: newLife)
+        players[index].lifeTotal = result.lifeTotal
+        players[index].commanderDamage = result.commanderDamage
+        gameBoardView.updatePlayer(at: index, lifeTotal: result.lifeTotal)
+        gameBoardView.applyCommanderDamage(from: players)
         editingIndex = nil
 
         let cellDotView = cell.dotNumberView
