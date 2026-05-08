@@ -4,7 +4,9 @@ class PlayerCellView: UIView {
     static let contentInset: CGFloat = 12
 
     private(set) var lifeTotal: Int = Player.defaultLife
-    var rotation: CGFloat = 0
+    var rotation: CGFloat = 0 {
+        didSet { badgeBar.iconRotation = rotation }
+    }
     var maxDotSize: CGFloat? {
         didSet { dotNumberView.maxDotSize = maxDotSize }
     }
@@ -13,18 +15,21 @@ class PlayerCellView: UIView {
     var isBeingEdited: Bool = false {
         didSet {
             dotNumberView.isHidden = isBeingEdited
-            damageRow.isHidden = isBeingEdited
+            badgeBar.isHidden = isBeingEdited
         }
     }
 
     private let contentContainer = UIView()
     let dotNumberView = DotNumberView()
-    let damageRow = CommanderDamageRowView()
+    let badgeBar = PlayerCellBadgeBar()
 
     private var changeDirection: ChangeDirection?
     private var repeatTimer: Timer?
     private var centerHoldTimer: Timer?
     private var isTouching = false
+
+    private static let lifeChangeHaptic = UIImpactFeedbackGenerator(style: .light)
+    private static let editActivationHaptic = UIImpactFeedbackGenerator(style: .medium)
 
     private enum TapZone { case left, center, right }
 
@@ -42,7 +47,7 @@ class PlayerCellView: UIView {
         contentContainer.isUserInteractionEnabled = false
         addSubview(contentContainer)
         contentContainer.addSubview(dotNumberView)
-        contentContainer.addSubview(damageRow)
+        contentContainer.addSubview(badgeBar)
     }
 
     override func layoutSubviews() {
@@ -57,24 +62,21 @@ class PlayerCellView: UIView {
         contentContainer.bounds = CGRect(x: 0, y: 0, width: contentW, height: contentH)
         contentContainer.center = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
 
-        let badgeRowH = damageRowHeight(forContentHeight: contentH)
+        let badgeRowH = Self.badgeRowHeight(forContentHeight: contentH)
         let dotH = contentH - badgeRowH
 
         dotNumberView.frame = CGRect(x: 0, y: 0, width: contentW, height: dotH)
-        damageRow.frame = CGRect(x: 0, y: dotH, width: contentW, height: badgeRowH)
+        badgeBar.frame = CGRect(x: 0, y: dotH, width: contentW, height: badgeRowH)
 
         contentContainer.transform = CGAffineTransform(rotationAngle: rotation * .pi / 180)
     }
 
-    /// Height of the area reserved for the commander damage row inside a cell.
-    /// Exposed statically so GameBoardView can subtract it when computing dot sizes.
-    static func damageRowHeight(forContentHeight contentH: CGFloat) -> CGFloat {
+    /// Height of the combined badge row (commander damage + counters) below the
+    /// life total. Exposed statically so GameBoardView can subtract it when
+    /// computing dot sizes.
+    static func badgeRowHeight(forContentHeight contentH: CGFloat) -> CGFloat {
         let h = contentH * CommanderDamageRowView.heightFraction
         return min(max(h, CommanderDamageRowView.minHeight), CommanderDamageRowView.maxHeight)
-    }
-
-    private func damageRowHeight(forContentHeight contentH: CGFloat) -> CGFloat {
-        Self.damageRowHeight(forContentHeight: contentH)
     }
 
     func setLifeTotal(_ value: Int, direction: ChangeDirection?, animated: Bool) {
@@ -83,10 +85,20 @@ class PlayerCellView: UIView {
         dotNumberView.updateNumber(value, direction: direction, animated: animated)
     }
 
-    /// Configures the commander damage badges. Pass empty `opponentIds` to hide the row.
-    func setCommanderDamage(opponentIds: [Int], playerCount: Int, damages: [Int]) {
-        damageRow.configure(opponentIds: opponentIds, playerCount: playerCount, damages: damages)
-        damageRow.setBadgesUserInteractionEnabled(false)
+    /// Configures the combined commander-damage + counter row.
+    func setBadges(
+        opponentIds: [Int],
+        playerCount: Int,
+        damages: [Int],
+        counters: [LifeCounter: Int]
+    ) {
+        badgeBar.iconRotation = rotation
+        badgeBar.configure(
+            opponentIds: opponentIds,
+            playerCount: playerCount,
+            damages: damages,
+            counters: counters
+        )
     }
 
     // MARK: - Touch handling
@@ -112,6 +124,7 @@ class PlayerCellView: UIView {
             }
         case .center:
             centerHoldTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+                Self.editActivationHaptic.impactOccurred(intensity: 0.9)
                 self?.onEditRequested?()
                 self?.centerHoldTimer = nil
             }
@@ -157,8 +170,51 @@ class PlayerCellView: UIView {
     private func applyChange(increment: Bool) {
         changeDirection = increment ? .increasing : .decreasing
         lifeTotal += increment ? 1 : -1
+        Self.lifeChangeHaptic.impactOccurred(intensity: 0.55)
         dotNumberView.updateNumber(lifeTotal, direction: changeDirection, animated: true)
         onLifeChanged?(lifeTotal)
+    }
+
+    // MARK: - Swipe-to-reset sweep
+
+    /// Apply the reset-swipe positional fade to this cell's dots and badge bar.
+    /// Coordinates are in `reference`'s space (typically the GameBoardView).
+    func applySweep(
+        in reference: UIView,
+        axisIsHorizontal: Bool,
+        leadingEdge: CGFloat,
+        direction: CGFloat,
+        feather: CGFloat
+    ) {
+        dotNumberView.applySweep(
+            in: reference,
+            axisIsHorizontal: axisIsHorizontal,
+            leadingEdge: leadingEdge,
+            direction: direction,
+            feather: feather
+        )
+
+        let badgeCenter = reference.convert(
+            CGPoint(x: badgeBar.bounds.midX, y: badgeBar.bounds.midY),
+            from: badgeBar
+        )
+        let bPos = axisIsHorizontal ? badgeCenter.x : badgeCenter.y
+        let bSigned = (leadingEdge - bPos) * direction
+        let bProgress = max(0, min(1, bSigned / feather))
+        badgeBar.alpha = 1 - bProgress
+    }
+
+    func resetSweep(animated: Bool) {
+        dotNumberView.resetSweep(animated: animated)
+        if animated {
+            UIView.animate(withDuration: 0.3, delay: 0,
+                           usingSpringWithDamping: 0.9, initialSpringVelocity: 0,
+                           options: .beginFromCurrentState) {
+                self.badgeBar.alpha = 1
+            }
+        } else {
+            badgeBar.alpha = 1
+        }
     }
 
     private func applyTilt(angle: CGFloat) {

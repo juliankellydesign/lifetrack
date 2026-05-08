@@ -19,6 +19,14 @@ class CommanderIconView: UIView {
     let playerCount: Int
     let highlightedIndex: Int
 
+    /// Cell rotation in degrees. The icon's dots are placed in the absolute board
+    /// layout; counter-rotating by the cell's rotation keeps them aligned with the
+    /// real board on screen (the highlighted dot points to where the opponent
+    /// physically sits).
+    var boardRotation: CGFloat = 0 {
+        didSet { transform = CGAffineTransform(rotationAngle: -boardRotation * .pi / 180) }
+    }
+
     private var dots: [UIView] = []
 
     init(playerCount: Int, highlightedIndex: Int) {

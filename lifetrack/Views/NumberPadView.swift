@@ -14,7 +14,7 @@ class NumberPadView: UIView {
         [.digit(1), .digit(2), .digit(3)],
         [.digit(4), .digit(5), .digit(6)],
         [.digit(7), .digit(8), .digit(9)],
-        [.backspace, .digit(0), .confirm],
+        [.confirm, .digit(0), .backspace],
     ]
 
     override init(frame: CGRect) {
@@ -27,22 +27,38 @@ class NumberPadView: UIView {
         buildButtons()
     }
 
+    private static let digitFontSize: CGFloat = 32
+    private static let digitLineHeight: CGFloat = 36
+    private static let actionIconSize: CGFloat = 32
+
+    static let rowSpacing: CGFloat = 10
+    static let columnSpacing: CGFloat = 0
+
+    private static func sizedActionIcon(named: String) -> UIImage? {
+        guard let img = UIImage(named: named) else { return nil }
+        let size = CGSize(width: actionIconSize, height: actionIconSize)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let resized = renderer.image { _ in
+            img.draw(in: CGRect(origin: .zero, size: size))
+        }
+        return resized.withRenderingMode(.alwaysTemplate)
+    }
+
     private func buildButtons() {
-        let symbolConfig = UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)
         for row in keys {
             for key in row {
                 let btn = UIButton()
-                btn.titleLabel?.font = .systemFont(ofSize: 22, weight: .medium)
-                btn.setTitleColor(.white, for: .normal)
                 btn.tintColor = .white
 
                 switch key {
                 case .digit(let d):
-                    btn.setTitle("\(d)", for: .normal)
+                    btn.setAttributedTitle(Self.digitTitle("\(d)"), for: .normal)
                 case .backspace:
-                    btn.setImage(UIImage(systemName: "xmark", withConfiguration: symbolConfig), for: .normal)
+                    btn.setImage(Self.sizedActionIcon(named: "icon-delete"), for: .normal)
+                    btn.imageView?.contentMode = .center
                 case .confirm:
-                    btn.setImage(UIImage(systemName: "checkmark", withConfiguration: symbolConfig), for: .normal)
+                    btn.setImage(Self.sizedActionIcon(named: "icon-checkmark"), for: .normal)
+                    btn.imageView?.contentMode = .center
                 }
 
                 let captured = key
@@ -71,18 +87,32 @@ class NumberPadView: UIView {
         }
     }
 
+    private static func digitTitle(_ s: String) -> NSAttributedString {
+        let style = NSMutableParagraphStyle()
+        style.minimumLineHeight = digitLineHeight
+        style.maximumLineHeight = digitLineHeight
+        style.alignment = .center
+        return NSAttributedString(
+            string: s,
+            attributes: [
+                .font: Karl.font(Karl.medium, size: digitFontSize),
+                .foregroundColor: UIColor.white,
+                .paragraphStyle: style,
+            ]
+        )
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         let cols = 3, rows = 4
-        let spacing: CGFloat = 10
-        let cellW = (bounds.width - CGFloat(cols - 1) * spacing) / CGFloat(cols)
-        let cellH = (bounds.height - CGFloat(rows - 1) * spacing) / CGFloat(rows)
+        let cellW = (bounds.width - CGFloat(cols - 1) * Self.columnSpacing) / CGFloat(cols)
+        let cellH = (bounds.height - CGFloat(rows - 1) * Self.rowSpacing) / CGFloat(rows)
 
         for (i, btn) in buttons.enumerated() {
             let r = i / cols, c = i % cols
             btn.frame = CGRect(
-                x: CGFloat(c) * (cellW + spacing),
-                y: CGFloat(r) * (cellH + spacing),
+                x: CGFloat(c) * (cellW + Self.columnSpacing),
+                y: CGFloat(r) * (cellH + Self.rowSpacing),
                 width: cellW, height: cellH
             )
         }
