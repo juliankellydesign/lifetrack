@@ -94,15 +94,15 @@ class PlayerCellView: UIView {
 
     /// Configures the combined commander-damage + counter row.
     func setBadges(
+        layout: PlayerLayout,
         opponentIds: [Int],
-        playerCount: Int,
         damages: [Int],
         counters: [LifeCounter: Int]
     ) {
         badgeBar.iconRotation = rotation
         badgeBar.configure(
+            layout: layout,
             opponentIds: opponentIds,
-            playerCount: playerCount,
             damages: damages,
             counters: counters
         )
@@ -247,6 +247,13 @@ class PlayerCellView: UIView {
         } else {
             badgeBar.alpha = 1
         }
+    }
+
+    /// Snap content to "off" (dots invisible, badge hidden). Pair with
+    /// `resetSweep(animated: true)` to play the roll-in.
+    func snapToOff() {
+        dotNumberView.snapToOff()
+        badgeBar.alpha = 0
     }
 
     private func applyTilt(angle: CGFloat) {

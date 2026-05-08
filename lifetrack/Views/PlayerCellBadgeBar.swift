@@ -16,8 +16,8 @@ class PlayerCellBadgeBar: UIView {
     }
 
     func configure(
+        layout: PlayerLayout,
         opponentIds: [Int],
-        playerCount: Int,
         damages: [Int],
         counters: [LifeCounter: Int]
     ) {
@@ -27,7 +27,7 @@ class PlayerCellBadgeBar: UIView {
         counterBadges.removeAll()
 
         for (i, oppId) in opponentIds.enumerated() {
-            let badge = CommanderDamageBadge(opponentId: oppId, playerCount: playerCount)
+            let badge = CommanderDamageBadge(opponentSeatIndex: oppId, layout: layout)
             badge.setDamage(i < damages.count ? damages[i] : 0, animated: false)
             badge.boardRotation = iconRotation
             addSubview(badge)

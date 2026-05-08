@@ -70,7 +70,7 @@ class LifeInputOverlay: UIView {
         commanderDamage: [Int: Int],
         counters: [LifeCounter: Int],
         opponentIds: [Int],
-        playerCount: Int,
+        layout: PlayerLayout,
         rotation: CGFloat
     ) {
         self.lifeTotal = lifeTotal
@@ -88,7 +88,7 @@ class LifeInputOverlay: UIView {
 
         let damages = opponentIds.map { commanderDamage[$0] ?? 0 }
         damageRow.iconRotation = rotation
-        damageRow.configure(opponentIds: opponentIds, playerCount: playerCount, damages: damages)
+        damageRow.configure(layout: layout, opponentIds: opponentIds, damages: damages)
         damageRow.setBadgesUserInteractionEnabled(true)
 
         counterRow.configure(values: counters)

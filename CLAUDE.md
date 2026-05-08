@@ -15,9 +15,19 @@ If you ship a change without updating this file, the next agent will work from a
 
 ## Project Overview
 
-Lifetrack is a Magic: The Gathering life counter iOS app. The phone sits at the center of the table and tracks life totals for 2–6 players. Portrait-locked, full-screen, no status bar. **UIKit** (rewritten from the original SwiftUI prototype), with SwiftUI hosted only where useful (e.g. `.contentTransition(.numericText)` for badge digit rolls).
+Lifetrack is a Magic: The Gathering life counter iOS app. The phone sits face-up in the center of the table and tracks life totals for 2–6 players seated around it, with multiple seating-layout variants per count (4-a corners, 4-b diamond; 5-a, 5-b; 6-a 3×2, 6-b corners+sides). Portrait-locked, full-screen, no status bar. **UIKit** (rewritten from the original SwiftUI prototype), with SwiftUI hosted only where useful (e.g. `.contentTransition(.numericText)` for badge digit rolls).
 
 Bundle ID: `jfk.lifetrack`. Targets iOS/iPadOS 26.1. No external dependencies.
+
+## Mental model: phone at the center of a real table
+
+Almost every visual decision in this app exists because the phone is lying flat on a Magic table with 2–6 humans seated around its edges. Internalize this first; it explains the rest of the code.
+
+- **Each player's life total faces *them*, not the phone.** A south-side player (`rotationDegrees: 0`) reads digits right-side-up. A north-side player (`180`) reads them upside-down from the phone's frame of reference. Side players (`±90`) read sideways. The `CGAffineTransform(rotationAngle:)` applied in `PlayerCellView.layoutSubviews` is just the mechanism — the reason is the table.
+- **`rotationDegrees` = the direction the player's head points, in screen space.** `0` = head south (bottom edge), `180` = head north (top edge), `90` = head west (left edge), `-90` = head east (right edge).
+- **`cellRect` is independent of `rotationDegrees`.** `cellRect` says where the player's life block paints; `rotationDegrees` says which way it reads. In `fiveA`, the 4 non-bottom cells paint as a 2×2 cluster in the upper portion of the screen, but those players actually sit on the *side* edges of the table — so they use rotation `±90`, not `180`. Don't conflate "cell is in the upper-left of the screen" with "player is at the top of the table."
+- **Tap zones, 3D tilt axis, commander-damage badge highlights, and reset roll-in all read from `rotationDegrees`** so changing one number reorients everything coherently. If you find yourself special-casing a rotation in a new view, you're probably re-implementing something that already exists — check `PlayerCellView.playerFraction`, `applyTilt`, and `PlayerLayoutIconView.boardRotation` first.
+- **Commander-damage badges visually point at the real opponent.** Each badge renders the layout's seat icon with one seat highlighted (the source opponent) and counter-rotated by the *viewing* player's rotation, so the highlighted dot always points the way the human's eyes have to look to find that opponent at the table.
 
 ## Build & Run
 
@@ -38,48 +48,71 @@ No test targets configured yet. Use the simulator for verification.
 ### Entry point
 - `AppDelegate.swift` — `@main`, vends a `UISceneConfiguration` for the `UIScene` lifecycle.
 - `SceneDelegate.swift` — Owns the `UIWindow`, sets `GameViewController` as root, disables the idle timer so the screen stays awake.
-- `GameViewController.swift` — Root controller. Manages player count, the `[Player]` array, the editing state, the bottom toolbar (player count selector, font picker, reset), the swipe-to-reset gesture, and the `LifeInputOverlay`.
+- `GameViewController.swift` — Root controller. Holds the active `PlayerLayout`, the `[Player]` array, and the editing state. Boots into 4-player layout-a by default. Hosts the bottom-right settings gear (font picker only — count selection happens in `LayoutSelectorView`), the swipe-to-reset gesture, the `LifeInputOverlay`, and the `LayoutSelectorView` shown after each reset.
 
 ### Models
 - `Models/Player.swift` — `Player` struct (`id`, `lifeTotal`, `commanderDamage: [Int: Int]`, `counters: [LifeCounter: Int]`). Constants: `defaultLife = 40`, `lethalCommanderDamage = 21`. `LifeCounter` enum: `poison`, `energy`, `rad`, `experience`.
+- `Models/PlayerLayout.swift` — Enum of all eight count+variant combinations (`.two`, `.three`, `.fourA`, `.fourB`, `.fiveA`, `.fiveB`, `.sixA`, `.sixB`). Each variant exposes `seats: [PlayerSeat]`. Seat index == player id and matches the dot order in the corresponding `playercounts/*.svg` source.
+  - `PlayerSeat.iconCenter: CGPoint` — Position of this seat's dot in the 32×32 SVG viewbox. Used by `PlayerLayoutIconView` to render the layout-selector icon and the commander-damage badge.
+  - `PlayerSeat.cellRect: CGRect` — Where the cell paints on the board, in unit-square `0…1` coords. Edges interior to the board (not at 0 or 1) get a half-`interCellGap` inset automatically when projected to screen space, so layouts with mixed cell sizes get consistent gutters without any per-layout tweaking.
+  - `PlayerSeat.rotationDegrees: CGFloat` — Where the player's head points (see "Mental model"). `0` = south, `180` = north, `90` = west, `-90` = east.
+  - `PlayerSeat.clockwiseIndex: Int` — Position in the post-reset roll-in stagger. `0` fires first, then `1`, etc. Hand-tuned per layout so the roll walks "around the table" in the physical seating order — independent of seat-id (SVG) order. When you add a new layout or rearrange seats, set these by walking the seats clockwise from 12 o'clock and numbering them.
+- `BoardInsets` (declared in the same file) — `topBottom: 52`, `leftRight: 8`, `interCellGap: 20`. **Single source of truth** for app-wide content insets; consumed by `GameBoardView`, `GameViewController`, `LayoutSelectorView`, and `LifeInputOverlay`. Don't re-derive insets locally — pull from here.
+- `playercounts/*.svg` — Canonical artwork, one file per variant. Seats are sourced from these files (each `<circle cx cy>` is an `iconCenter`). When you change a layout, **edit the SVG first**, then update the seat array to match — the SVGs are the spec, the Swift data is the implementation.
 
 ### Layout system
-- `Views/GameBoardView.swift` — Arranges `PlayerCellView`s using absolute positioning (`CGRect` slots) based on player count. Computes a **uniform dot size** (min across all cells) so dots are consistent even when cell sizes differ (e.g. full-width vs half-width in 3/5-player layouts). Hosts the swipe-to-reset sweep math.
-- Layouts: 2p (1+1), 3p (2+1), 4p (2+2), 5p (2+2+1), 6p (1+2+2+1). Full-width cells get 0°/180° rotation, half-width cells get ±90°.
+- `Views/GameBoardView.swift` — Owns the cells. Three responsibilities:
+  - **Project `cellRect` → screen frame.** `layoutSlots(for:in:)` multiplies each unit-square `cellRect` by the board size and shrinks any edge interior to the board by `interCellGap / 2`. That's why `fiveA`'s half-width side cells and full-width bottom cell line up with the same gutter without per-layout code.
+  - **Compute a uniform dot size.** `uniformDotSize(for:)` walks every slot, accounts for the rotated content frame (width/height swapped for `±90°`), subtracts content inset and badge-row height, asks `DotNumberView.dotSize(fitting:)` for the largest dot that fits, and takes the **min** across all slots. Every cell is then capped to that value via `cell.maxDotSize`. Without this, bigger cells would render with bigger dots than smaller ones in the same layout.
+  - **Drive the swipe-to-reset gesture and the post-reset roll-in.** See "Reset flow" below.
 
 ### Player cells
 - `Views/PlayerCellView.swift` — One player's life block. Composes a `DotNumberView` (life total) and a `PlayerCellBadgeBar` (commander damage + counters), rotated together to match cell orientation.
-  - **Touch model**:
+  - **Layout pipeline.** In `layoutSubviews`: `contentContainer` is sized for the *rotated* coord space (width/height swapped for `±90°`), centered in the cell, then a `CGAffineTransform(rotationAngle:)` is applied. So the dot grid is always laid out as if the player's "up" is the screen's "up" — rotation is the final twist. The badge bar pins to the *bottom* of the rotated content (i.e. the side closest to the seated player), under the life total.
+  - **Touch model** (zones are relative to the *player's* orientation, not the screen):
     - **Left / right thirds**: single tap commits ±1 on touchUp (light haptic). Holding past `holdActivationDelay` (0.5s) starts repeating ±10 every `repeatInterval` (0.35s) with a medium haptic per tick. If a hold starts repeating, the touchUp tap is suppressed.
     - **Center third**: hold 0.5s opens the number-input overlay (medium haptic on activation).
-  - 3D tilt on press (7°, axis rotates with the cell so tilt always pitches "into the table" relative to the player).
-  - `ChangeDirection` enum drives the staggered dot animation direction (top→bottom for decrease, bottom→top for increase).
-- **Rotation-aware tap zones**: `playerFraction` maps the touch point to a 0→1 value along the player's left-to-right axis, accounting for 0°/±90°/180° rotation.
+  - **Rotation-aware tap zones.** `playerFraction(at:)` maps a touch point to a 0→1 value along the player's left-to-right axis, accounting for `0°/±90°/180°`. **Always go through this** — never compare `location.x` to `bounds.width` directly; that would give the wrong zone for any non-zero rotation.
+  - **3D tilt on press** (7°, axis rotates with the cell so tilt always pitches "into the table" *toward the player*). Axis is `(x: -sin(R), y: cos(R), z: 0)` where R is the cell's rotation in radians.
+  - **`ChangeDirection`** drives the staggered dot animation direction: `.decreasing` = top→bottom (for ±1/±10 down), `.increasing` = bottom→top (for ±1/±10 up). Set in the same state transaction as the value change so dots see the correct delay.
 
 ### Badges (under each life total)
 - `Views/PlayerCellBadgeBar.swift` — Combined row of commander-damage badges + counter badges along the player's near edge.
-- `Views/CommanderDamageBadge.swift` / `CommanderDamageRowView.swift` — One badge per opponent. The badge icon is a mini diagram of the seating layout with the source opponent's dot at full opacity and the rest dimmed. Numeral hidden at 0; turns red at `lethalCommanderDamage` (21). Long-press editor exposes ± targets above/below for tap-to-increment with hold-to-repeat (light haptic per tick), clamped at 0.
-- `Views/CommanderIconView.swift` — The mini seating diagram. Counter-rotates so the highlighted dot tracks the real opponent at the table.
+- `Views/CommanderDamageBadge.swift` / `CommanderDamageRowView.swift` — One badge per opponent. The badge icon is rendered by `PlayerLayoutIconView` with the source opponent's seat highlighted at full opacity and the rest dimmed (alpha 0.2). Numeral hidden at 0; turns red at `lethalCommanderDamage` (21). Long-press editor exposes ± targets above/below for tap-to-increment with hold-to-repeat (light haptic per tick), clamped at 0.
+- `Views/PlayerLayoutIconView.swift` — Mini-diagram of any `PlayerLayout` driven directly off `PlayerSeat.iconCenter` in the 32-unit viewbox. Used both by the layout selector (no highlight) and by commander-damage badges (one seat highlighted). `boardRotation` counter-rotates the icon so the highlighted dot tracks the real opponent at the table.
+- `Views/LayoutSelectorView.swift` — Full-screen 4×2 grid of `PlayerLayoutIconView`s the user picks from after a swipe-to-reset (and on first launch if they want to switch counts). Buttons are `(screenW − 16) / 6` wide × `(screenH − 104) / 4` tall, centered with 1/6 gutters horizontally and 1/4 gutters vertically inside the global `BoardInsets`. Selecting a layout fires `onSelect` and the controller starts the next game.
 - `Views/LifeCounterBadge.swift` / `LifeCounterRowView.swift` — Poison / energy / rad / experience counters; same edit affordances as commander damage.
 - `Views/CounterBadge.swift` — Shared base for both badge types. Damage / counter numerals are rendered via SwiftUI `Text` hosted in UIKit using `.contentTransition(.numericText(value:))` driven by an `@Observable` model so digits roll up/down per change.
 
 ### Number input overlay
-- `Views/LifeInputOverlay.swift` — Full-screen black backdrop with a hero animation that converges onto the originating cell. Content is inset inside `safeAreaInsets` (Dynamic Island + home indicator) while the backdrop paints edge-to-edge. Tap the life total to confirm and dismiss.
+- `Views/LifeInputOverlay.swift` — Full-screen black backdrop with a hero animation that converges onto the originating cell. Content is inset inside `safeAreaInsets` (Dynamic Island + home indicator) while the backdrop paints edge-to-edge. The overlay receives `layout: PlayerLayout` so the commander-damage row inside it can render the same `PlayerLayoutIconView` highlights as the cell badges. Tap the life total to confirm and dismiss.
 - `Views/NumberPadView.swift` — 50/50 numpad split, 8% white pill backgrounds at 40pt, confirm/delete keys (32pt action icons).
 
 ### Dot-matrix rendering
-- `Views/DotPatterns.swift` — Static 5×7 grid patterns for digits 0-9 and minus sign, stored as `[Bool]` arrays. Multiple font variants (Classic, Chunky, Display, Mini, Karl).
-- `Views/DotDigitView.swift` — Renders one digit as 35 dots positioned via offsets. Each dot animates independently with a per-row staggered delay.
-- `Views/DotNumberView.swift` — Splits a number into digits, computes dot size from available space, lays out `DotDigitView`s. Accepts optional `maxDotSize` cap so all cells share a uniform dot size. Also implements `applySweep(...)` / `resetSweep(...)` for the swipe-to-reset positional fade.
-- `Views/Karl.swift` — Karl typeface bundled in `Resources/Fonts/`. Switchable via the gear menu in the toolbar.
+- `Views/DotPatterns.swift` — Static `5 × 7` grid patterns for digits 0–9 and minus, stored as `[Bool]` arrays. Multiple font variants (Classic, Chunky, Display, Mini, Karl). Also declares `ChangeDirection` and its per-row delay function (`row * 0.035` for `.decreasing`, `(rows - 1 - row) * 0.035` for `.increasing`).
+- `Views/DotDigitView.swift` — Renders one digit as 35 dots positioned at offsets. Each dot animates independently. Key methods:
+  - `setDigit(_:direction:animated:)` — Diffs old vs new pattern; only animates dots that change, with row-staggered delay from `direction`.
+  - `snapToOff()` — Snaps every dot to scale `0.01` / alpha `0` instantly. Used to prep a roll-in.
+  - `applySweep(...)` — Positional fade for the swipe-to-reset; per-dot interpolation between natural state and "off" based on distance from the swipe's leading edge.
+  - `resetSweep(animated:)` — Restores natural state for the current digit. With `animated: true` it uses `ChangeDirection.increasing.delay(forRow:)`, so calling `snapToOff()` then `resetSweep(animated: true)` gives you the bottom-up roll-in.
+- `Views/DotNumberView.swift` — Splits a number into digits, computes dot size from available space, lays out `DotDigitView`s. Accepts optional `maxDotSize` cap so all cells share a uniform dot size. Forwards `applySweep` / `resetSweep` / `snapToOff` to its digit views.
+- `Views/Karl.swift` — Karl typeface bundled in `Resources/Fonts/`. Switchable via the bottom-right gear button (the only thing left in `GameViewController`'s toolbar band — count selection moved to `LayoutSelectorView`).
 
-### Swipe-to-reset
-- A pan gesture on `GameBoardView` projects each cell's center onto the swipe axis; dots fade and scale individually based on the finger's leading edge. At >50% travel the reset commits (medium haptic) and freshly built cells animate back in from the same direction.
+### Reset flow (swipe-out → selector → roll-in)
+
+A reset has three phases. Be careful when editing any of them — they're tuned to feel like one continuous gesture.
+
+1. **Swipe-out (finger-driven).** A pan gesture on `GameBoardView` measures axis + direction on `.began`, then on each `.changed` calls `applySweep(in:axisIsHorizontal:leadingEdge:direction:feather:)` on every cell. Each dot computes its position along the swipe axis (in board coords) and linearly interpolates from natural state to off (scale `0.01`, alpha `0`) over `sweepFeather: 60pt`. The badge bar fades by the same progress. Commits at >50% travel **or** velocity > 800pt/s (medium haptic): the sweep edge animates off-screen, then `onResetRequested` fires.
+2. **Layout selector.** `GameViewController.handleSwipeReset` clears `players`, configures the board to empty, and fades in `LayoutSelectorView`. The toolbar (just the gear) hides.
+3. **Roll-in (`playWipeIn`).** When the user picks a layout, `startGame(with:)` rebuilds cells, calls `playWipeIn()`, and fades the selector out concurrently (so the new cells aren't visible behind a transparent selector). `playWipeIn` snaps every cell's content to "off" via `cell.snapToOff()`, then dispatches each cell's `resetSweep(animated: true)` on a `seat.clockwiseIndex * 100ms` delay. Inside each cell, the digit dots use `ChangeDirection.increasing.delay(forRow:)` so they fill in bottom-up — the same animation a +1 tap plays. The clockwise order is *static* per layout: each `PlayerSeat` declares its own `clockwiseIndex`, so changing the order means editing that field in `PlayerLayout.swift` rather than rewriting math.
+
+The visual story: numbers swept off → blank → numbers reappear, each cell springing in clockwise around the table. It echoes the per-tap roll, just amplified across all seats. The clockwise direction matches how a paper life-counter would naturally fill in around a table when you go "around the horn."
 
 ### Key patterns
-- **Rotation handling**: Content is sized for the rotated coordinate space (width/height swapped for ±90°), then a `CGAffineTransform` rotation is applied, then the frame is re-established. The 3D tilt axis rotates with the cell: `axis: (x: -sin(R), y: cos(R), z: 0)`.
-- **Animation**: Per-dot spring animations with row-based delay. `ChangeDirection` is set in the same state transaction as the value change so dots see the correct delay.
-- **Haptics**: Light impact for per-tick changes (life ±1, badge ±1). Medium impact for bulk repeats (life ±10), edit-overlay activation, and swipe-reset commit. Pre-warmed `UIImpactFeedbackGenerator`s held as static properties on `PlayerCellView`.
+- **Rotation handling.** Always size content for the rotated coordinate space first (swap width/height for `±90°`), then apply `CGAffineTransform(rotationAngle:)`. Anything that takes a touch point or measures along the player's axis must go through a rotation-aware helper (`PlayerCellView.playerFraction`, `PlayerLayoutIconView.boardRotation`) — never compare raw screen coords to a rotated cell's bounds. The 3D tilt axis is `(x: -sin(R), y: cos(R), z: 0)` so press tilt always pitches the player's edge of the cell *away* from them, "into the table."
+- **Animation.** Per-dot spring animations with row-based delay (`UIView.animate(withDuration: 0.3, delay:, usingSpringWithDamping: 0.7, ...)`). `ChangeDirection` is set in the same state transaction as the value change so dots see the correct delay. The post-reset roll-in reuses the same per-dot animation but pre-snaps every dot off via `snapToOff()` and adds a clockwise inter-cell stagger (see "Reset flow"). When you add a new animation that touches dots, prefer composing these primitives over writing a new one.
+- **Haptics.** Light impact for per-tick changes (life ±1, badge ±1). Medium impact for bulk repeats (life ±10), edit-overlay activation, and swipe-reset commit. Pre-warmed `UIImpactFeedbackGenerator`s held as `static` properties on `PlayerCellView` so the first tap doesn't pay warm-up cost.
+- **Layout selector vs gear button.** Player count + variant is picked in `LayoutSelectorView` (post-reset, full-screen). The gear in the bottom-right is *only* the font picker. Don't add count-selection UI to the gear; don't add font-selection UI to the selector.
 
 ## gstack
 
