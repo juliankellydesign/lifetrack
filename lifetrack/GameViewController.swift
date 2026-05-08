@@ -9,6 +9,7 @@ class GameViewController: UIViewController {
     private let toolbarView = UIView()
     private var countButtons: [UIButton] = []
     private let resetButton = UIButton()
+    private let settingsButton = UIButton()
     private let overlayView = LifeInputOverlay()
 
     override var prefersStatusBarHidden: Bool { true }
@@ -33,7 +34,18 @@ class GameViewController: UIViewController {
         gameBoardView.onLifeChanged = { [weak self] index, newLife in
             self?.players[index].lifeTotal = newLife
         }
+        gameBoardView.onResetRequested = { [weak self] in
+            self?.handleSwipeReset()
+        }
         view.addSubview(gameBoardView)
+    }
+
+    private func handleSwipeReset() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred(intensity: 0.9)
+        players = (0..<playerCount).map { Player(id: $0, lifeTotal: Player.defaultLife) }
+        gameBoardView.configure(with: players)
+        updateToolbarAppearance()
+        gameBoardView.playWipeIn()
     }
 
     private func setupToolbar() {
@@ -58,6 +70,13 @@ class GameViewController: UIViewController {
             self?.resetPlayers()
         }, for: .touchUpInside)
         toolbarView.addSubview(resetButton)
+
+        settingsButton.setImage(UIImage(systemName: "gearshape"), for: .normal)
+        settingsButton.tintColor = .gray
+        settingsButton.addAction(UIAction { [weak self] _ in
+            self?.presentSettings()
+        }, for: .touchUpInside)
+        toolbarView.addSubview(settingsButton)
 
         view.addSubview(toolbarView)
     }
@@ -106,6 +125,10 @@ class GameViewController: UIViewController {
             x: toolbarView.bounds.width - pad - btnSize,
             y: y, width: btnSize, height: btnSize
         )
+        settingsButton.frame = CGRect(
+            x: toolbarView.bounds.width - pad - btnSize * 2 - 8,
+            y: y, width: btnSize, height: btnSize
+        )
     }
 
     private func updateToolbarAppearance() {
@@ -115,6 +138,28 @@ class GameViewController: UIViewController {
             btn.setTitleColor(selected ? .white : .gray, for: .normal)
             btn.backgroundColor = selected ? UIColor.white.withAlphaComponent(0.2) : .clear
         }
+    }
+
+    // MARK: - Settings
+
+    private func presentSettings() {
+        let alert = UIAlertController(
+            title: "Font",
+            message: nil,
+            preferredStyle: .actionSheet
+        )
+        let activeID = DotFontSettings.current.id
+        for font in DotFont.allFonts {
+            let mark = (font.id == activeID) ? "✓ " : "   "
+            alert.addAction(UIAlertAction(title: mark + font.displayName, style: .default) { [weak self] _ in
+                DotFontSettings.set(font)
+                self?.gameBoardView.setNeedsLayout()
+            })
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.popoverPresentationController?.sourceView = settingsButton
+        alert.popoverPresentationController?.sourceRect = settingsButton.bounds
+        present(alert, animated: true)
     }
 
     // MARK: - State
@@ -146,6 +191,7 @@ class GameViewController: UIViewController {
         overlayView.prepare(
             lifeTotal: player.lifeTotal,
             commanderDamage: player.commanderDamage,
+            counters: player.counters,
             opponentIds: opponents.map { $0.id },
             playerCount: players.count,
             rotation: rotation
@@ -171,9 +217,15 @@ class GameViewController: UIViewController {
 
         players[index].lifeTotal = result.lifeTotal
         players[index].commanderDamage = result.commanderDamage
+        players[index].counters = result.counters
         gameBoardView.updatePlayer(at: index, lifeTotal: result.lifeTotal)
-        gameBoardView.applyCommanderDamage(from: players)
+        gameBoardView.applyPlayerBadges(from: players)
         editingIndex = nil
+
+        // Make the badge bar visible-but-transparent so it can fade in
+        // alongside the overlay dismissal instead of snapping in at the end.
+        cell.badgeBar.isHidden = false
+        cell.badgeBar.alpha = 0
 
         let cellDotView = cell.dotNumberView
         let cellVisualCenter = view.convert(
@@ -189,6 +241,7 @@ class GameViewController: UIViewController {
             options: .curveEaseInOut,
             animations: {
                 self.gameBoardView.setAllAlphas(1)
+                cell.badgeBar.alpha = 1
                 self.overlayView.placeDotNumberView(visualCenter: overlayCenter, sourceDotSize: cellDotSize)
                 self.overlayView.dismissChrome()
                 self.toolbarView.alpha = 1

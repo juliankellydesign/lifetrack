@@ -9,9 +9,15 @@ class CommanderDamageRowView: UIView {
 
     /// Vertical fraction of available cell content height to allocate to this row.
     static let heightFraction: CGFloat = 0.13
-    static let minHeight: CGFloat = 18
+    static let minHeight: CGFloat = CounterBadge.inlineValueLineHeight
     static let maxHeight: CGFloat = 36
     private static let badgeSpacing: CGFloat = 12
+
+    /// Rotation (in degrees) of the player cell containing this row. Propagated to
+    /// each badge's commander icon so its dots stay aligned to the real board.
+    var iconRotation: CGFloat = 0 {
+        didSet { for badge in badges { badge.boardRotation = iconRotation } }
+    }
 
     /// Configures the row to display badges for the given opponents.
     /// - Parameters:
@@ -25,6 +31,7 @@ class CommanderDamageRowView: UIView {
         for (i, oppId) in opponentIds.enumerated() {
             let badge = CommanderDamageBadge(opponentId: oppId, playerCount: playerCount)
             badge.setDamage(i < damages.count ? damages[i] : 0, animated: false)
+            badge.boardRotation = iconRotation
             badge.onAdjust = { [weak self] delta in
                 self?.onAdjustDamage?(oppId, delta)
             }
@@ -52,11 +59,13 @@ class CommanderDamageRowView: UIView {
         guard !badges.isEmpty else { return }
         let h = bounds.height
         let widths = badges.map { $0.intrinsicWidth(forHeight: h) }
-        let totalW = widths.reduce(0, +) + CGFloat(badges.count - 1) * Self.badgeSpacing
+        let visibleCount = widths.filter { $0 > 0 }.count
+        let totalW = widths.reduce(0, +) + CGFloat(max(visibleCount - 1, 0)) * Self.badgeSpacing
         var x = (bounds.width - totalW) / 2
         for (i, badge) in badges.enumerated() {
-            badge.frame = CGRect(x: x, y: 0, width: widths[i], height: h)
-            x += widths[i] + Self.badgeSpacing
+            let w = widths[i]
+            badge.frame = CGRect(x: x, y: 0, width: w, height: h)
+            if w > 0 { x += w + Self.badgeSpacing }
         }
     }
 

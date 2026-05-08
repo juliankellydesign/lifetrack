@@ -64,4 +64,60 @@ class DotDigitView: UIView {
 
     var contentWidth: CGFloat { bounds.width }
     var contentHeight: CGFloat { bounds.height }
+
+    /// Apply a positional sweep fade. For each dot, we compute how far past
+    /// the swipe's leading edge it sits, in `reference` coordinates, then
+    /// linearly interpolate from its natural state (alpha 1 / scale 1 if
+    /// active) to the "off" state (alpha 0 / scale 0.01) over `feather` pts.
+    func applySweep(
+        in reference: UIView,
+        axisIsHorizontal: Bool,
+        leadingEdge: CGFloat,
+        direction: CGFloat,
+        feather: CGFloat
+    ) {
+        guard let digit = currentDigit else { return }
+        let pattern = DotPatterns.pattern(for: digit)
+        for (i, dot) in dotViews.enumerated() {
+            let p = reference.convert(
+                CGPoint(x: dot.bounds.midX, y: dot.bounds.midY),
+                from: dot
+            )
+            let pos = axisIsHorizontal ? p.x : p.y
+            let signed = (leadingEdge - pos) * direction
+            let progress = max(0, min(1, signed / feather))
+
+            let active = pattern[i]
+            let baseScale: CGFloat = active ? 1 : 0.01
+            let scale = baseScale + (0.01 - baseScale) * progress
+            let alpha: CGFloat = (active ? 1 : 0) * (1 - progress)
+            dot.transform = CGAffineTransform(scaleX: scale, y: scale)
+            dot.alpha = alpha
+        }
+    }
+
+    /// Restore dots to their natural state for the current digit. Forces every
+    /// dot back (unlike `setDigit`, which skips dots whose pattern is unchanged).
+    func resetSweep(animated: Bool) {
+        guard let digit = currentDigit else { return }
+        let pattern = DotPatterns.pattern(for: digit)
+        for (i, dot) in dotViews.enumerated() {
+            let active = pattern[i]
+            let scale: CGAffineTransform = active ? .identity : CGAffineTransform(scaleX: 0.01, y: 0.01)
+            let alpha: CGFloat = active ? 1 : 0
+            if animated {
+                let row = i / DotPatterns.columns
+                let delay = ChangeDirection.increasing.delay(forRow: row)
+                UIView.animate(withDuration: 0.3, delay: delay,
+                               usingSpringWithDamping: 0.7, initialSpringVelocity: 0,
+                               options: .beginFromCurrentState) {
+                    dot.transform = scale
+                    dot.alpha = alpha
+                }
+            } else {
+                dot.transform = scale
+                dot.alpha = alpha
+            }
+        }
+    }
 }
