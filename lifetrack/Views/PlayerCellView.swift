@@ -27,8 +27,15 @@ class PlayerCellView: UIView {
     private var repeatTimer: Timer?
     private var centerHoldTimer: Timer?
     private var isTouching = false
+    private var pendingTapIncrement: Bool?
+    private var didStartRepeating = false
+
+    private static let holdActivationDelay: TimeInterval = 0.5
+    private static let repeatInterval: TimeInterval = 0.35
+    private static let bulkChangeMagnitude = 10
 
     private static let lifeChangeHaptic = UIImpactFeedbackGenerator(style: .light)
+    private static let bulkChangeHaptic = UIImpactFeedbackGenerator(style: .medium)
     private static let editActivationHaptic = UIImpactFeedbackGenerator(style: .medium)
 
     private enum TapZone { case left, center, right }
@@ -112,16 +119,10 @@ class PlayerCellView: UIView {
         switch zone {
         case .left:
             applyTilt(angle: -7)
-            applyChange(increment: false)
-            repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
-                self?.applyChange(increment: false)
-            }
+            scheduleBulkRepeat(increment: false)
         case .right:
             applyTilt(angle: 7)
-            applyChange(increment: true)
-            repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
-                self?.applyChange(increment: true)
-            }
+            scheduleBulkRepeat(increment: true)
         case .center:
             centerHoldTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
                 Self.editActivationHaptic.impactOccurred(intensity: 0.9)
@@ -132,18 +133,45 @@ class PlayerCellView: UIView {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        endTouch()
+        endTouch(committingTap: true)
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        endTouch()
+        endTouch(committingTap: false)
     }
 
-    private func endTouch() {
+    private func scheduleBulkRepeat(increment: Bool) {
+        pendingTapIncrement = increment
+        didStartRepeating = false
+        repeatTimer = Timer.scheduledTimer(withTimeInterval: Self.holdActivationDelay,
+                                           repeats: false) { [weak self] _ in
+            self?.beginBulkRepeat(increment: increment)
+        }
+    }
+
+    private func beginBulkRepeat(increment: Bool) {
+        didStartRepeating = true
+        applyChange(increment: increment, magnitude: Self.bulkChangeMagnitude, bulk: true)
+        repeatTimer = Timer.scheduledTimer(withTimeInterval: Self.repeatInterval,
+                                           repeats: true) { [weak self] _ in
+            self?.applyChange(increment: increment,
+                              magnitude: Self.bulkChangeMagnitude,
+                              bulk: true)
+        }
+    }
+
+    private func endTouch(committingTap: Bool) {
         repeatTimer?.invalidate()
         repeatTimer = nil
         centerHoldTimer?.invalidate()
         centerHoldTimer = nil
+
+        if committingTap, !didStartRepeating, let increment = pendingTapIncrement {
+            applyChange(increment: increment, magnitude: 1, bulk: false)
+        }
+
+        pendingTapIncrement = nil
+        didStartRepeating = false
         isTouching = false
         applyTilt(angle: 0)
     }
@@ -167,10 +195,14 @@ class PlayerCellView: UIView {
         return .center
     }
 
-    private func applyChange(increment: Bool) {
+    private func applyChange(increment: Bool, magnitude: Int, bulk: Bool) {
         changeDirection = increment ? .increasing : .decreasing
-        lifeTotal += increment ? 1 : -1
-        Self.lifeChangeHaptic.impactOccurred(intensity: 0.55)
+        lifeTotal += increment ? magnitude : -magnitude
+        if bulk {
+            Self.bulkChangeHaptic.impactOccurred(intensity: 0.85)
+        } else {
+            Self.lifeChangeHaptic.impactOccurred(intensity: 0.55)
+        }
         dotNumberView.updateNumber(lifeTotal, direction: changeDirection, animated: true)
         onLifeChanged?(lifeTotal)
     }
