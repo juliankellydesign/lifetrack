@@ -9,7 +9,7 @@ class GameBoardView: UIView {
     var onResetRequested: (() -> Void)?
 
     private static let contentInset: CGFloat = PlayerCellView.contentInset
-    private static let gap: CGFloat = 20
+    private static let gap: CGFloat = BoardInsets.interCellGap
 
     /// Width over which the leading edge of the swipe blends from "natural" to "wiped".
     private static let sweepFeather: CGFloat = 60
@@ -20,6 +20,7 @@ class GameBoardView: UIView {
     }
 
     private var currentSlots: [Slot] = []
+    private(set) var layout: PlayerLayout = .fourA
 
     private let resetPanGesture = UIPanGestureRecognizer()
     private var sweepStartLocation: CGPoint = .zero
@@ -43,7 +44,8 @@ class GameBoardView: UIView {
         addGestureRecognizer(resetPanGesture)
     }
 
-    func configure(with players: [Player]) {
+    func configure(layout: PlayerLayout, players: [Player]) {
+        self.layout = layout
         cellViews.forEach { $0.removeFromSuperview() }
         cellViews.removeAll()
 
@@ -72,8 +74,8 @@ class GameBoardView: UIView {
         for (i, player) in players.enumerated() where i < cellViews.count {
             let opponents = players.filter { $0.id != player.id }.sorted(by: { $0.id < $1.id })
             cellViews[i].setBadges(
+                layout: layout,
                 opponentIds: opponents.map { $0.id },
-                playerCount: players.count,
                 damages: opponents.map { player.damage(from: $0.id) },
                 counters: player.counters
             )
@@ -112,7 +114,7 @@ class GameBoardView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let slots = layoutSlots(for: cellViews.count, in: bounds.size)
+        let slots = layoutSlots(for: layout, in: bounds.size)
         currentSlots = slots
         let uniformDotSize = Self.uniformDotSize(for: slots)
 
@@ -214,94 +216,53 @@ class GameBoardView: UIView {
         }
     }
 
-    /// Animate the freshly-rebuilt cells in from the same swipe direction. Call
-    /// this after `configure(with:)` rebuilds cells in response to `onResetRequested`.
+    /// Animate the freshly-rebuilt cells in using the same staggered dot roll
+    /// the life total plays on increment — each digit fills in bottom-up from
+    /// blank. Cells fire in `PlayerSeat.clockwiseIndex` order with a 100ms
+    /// stagger between each. Call after `configure(with:)` rebuilds cells in
+    /// response to `onResetRequested`.
     func playWipeIn() {
         layoutIfNeeded()
-        let span = sweepAxisIsHorizontal ? bounds.width : bounds.height
-        let startEdge: CGFloat = sweepDirection > 0
-            ? span + Self.sweepFeather
-            : -Self.sweepFeather
         for cell in cellViews {
-            cell.applySweep(
-                in: self,
-                axisIsHorizontal: sweepAxisIsHorizontal,
-                leadingEdge: startEdge,
-                direction: sweepDirection,
-                feather: Self.sweepFeather
-            )
+            cell.snapToOff()
         }
-        UIView.animate(withDuration: 0.5, delay: 0.05,
-                       usingSpringWithDamping: 0.9, initialSpringVelocity: 0,
-                       options: [.beginFromCurrentState, .curveEaseOut]) {
-            let endEdge: CGFloat = self.sweepDirection > 0
-                ? -Self.sweepFeather
-                : span + Self.sweepFeather
-            for cell in self.cellViews {
-                cell.applySweep(
-                    in: self,
-                    axisIsHorizontal: self.sweepAxisIsHorizontal,
-                    leadingEdge: endEdge,
-                    direction: self.sweepDirection,
-                    feather: Self.sweepFeather
-                )
-            }
-        } completion: { _ in
-            for cell in self.cellViews {
-                cell.resetSweep(animated: false)
+        let seats = layout.seats
+        // asyncAfter (even at delay 0) also gives the snap a runloop to commit
+        // before the first spring starts.
+        for (i, cell) in cellViews.enumerated() where i < seats.count {
+            let step = seats[i].clockwiseIndex
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(step) * 0.1) {
+                cell.resetSweep(animated: true)
             }
         }
     }
 
-    private func layoutSlots(for count: Int, in size: CGSize) -> [Slot] {
-        let pad = Self.gap
+    /// Project each seat's unit-square `cellRect` into the board frame, insetting
+    /// any edge that doesn't touch the board boundary by half the inter-cell gap.
+    /// This way different layouts (clean grids, diamond, mixed) all get
+    /// consistent gutters automatically.
+    private func layoutSlots(for layout: PlayerLayout, in size: CGSize) -> [Slot] {
+        let halfGap = Self.gap / 2
         let w = size.width
         let h = size.height
-        let halfW = (w - pad) / 2
+        let eps: CGFloat = 0.0001
 
-        switch count {
-        case 2:
-            let rowH = (h - pad) / 2
-            return [
-                Slot(frame: CGRect(x: 0, y: 0, width: w, height: rowH), rotationDegrees: 180),
-                Slot(frame: CGRect(x: 0, y: rowH + pad, width: w, height: rowH), rotationDegrees: 0),
-            ]
-        case 3:
-            let rowH = (h - pad) / 2
-            return [
-                Slot(frame: CGRect(x: 0, y: 0, width: halfW, height: rowH), rotationDegrees: 90),
-                Slot(frame: CGRect(x: halfW + pad, y: 0, width: halfW, height: rowH), rotationDegrees: -90),
-                Slot(frame: CGRect(x: 0, y: rowH + pad, width: w, height: rowH), rotationDegrees: 0),
-            ]
-        case 4:
-            let rowH = (h - pad) / 2
-            return [
-                Slot(frame: CGRect(x: 0, y: 0, width: halfW, height: rowH), rotationDegrees: 90),
-                Slot(frame: CGRect(x: halfW + pad, y: 0, width: halfW, height: rowH), rotationDegrees: -90),
-                Slot(frame: CGRect(x: 0, y: rowH + pad, width: halfW, height: rowH), rotationDegrees: 90),
-                Slot(frame: CGRect(x: halfW + pad, y: rowH + pad, width: halfW, height: rowH), rotationDegrees: -90),
-            ]
-        case 5:
-            let rowH = (h - 2 * pad) / 3
-            return [
-                Slot(frame: CGRect(x: 0, y: 0, width: halfW, height: rowH), rotationDegrees: 90),
-                Slot(frame: CGRect(x: halfW + pad, y: 0, width: halfW, height: rowH), rotationDegrees: -90),
-                Slot(frame: CGRect(x: 0, y: rowH + pad, width: halfW, height: rowH), rotationDegrees: 90),
-                Slot(frame: CGRect(x: halfW + pad, y: rowH + pad, width: halfW, height: rowH), rotationDegrees: -90),
-                Slot(frame: CGRect(x: 0, y: 2 * (rowH + pad), width: w, height: rowH), rotationDegrees: 0),
-            ]
-        case 6:
-            let rowH = (h - 3 * pad) / 4
-            return [
-                Slot(frame: CGRect(x: 0, y: 0, width: w, height: rowH), rotationDegrees: 180),
-                Slot(frame: CGRect(x: 0, y: rowH + pad, width: halfW, height: rowH), rotationDegrees: 90),
-                Slot(frame: CGRect(x: halfW + pad, y: rowH + pad, width: halfW, height: rowH), rotationDegrees: -90),
-                Slot(frame: CGRect(x: 0, y: 2 * (rowH + pad), width: halfW, height: rowH), rotationDegrees: 90),
-                Slot(frame: CGRect(x: halfW + pad, y: 2 * (rowH + pad), width: halfW, height: rowH), rotationDegrees: -90),
-                Slot(frame: CGRect(x: 0, y: 3 * (rowH + pad), width: w, height: rowH), rotationDegrees: 0),
-            ]
-        default:
-            return []
+        return layout.seats.map { seat in
+            let r = seat.cellRect
+            let leftEdgeAtBoundary = r.minX < eps
+            let rightEdgeAtBoundary = r.maxX > 1 - eps
+            let topEdgeAtBoundary = r.minY < eps
+            let bottomEdgeAtBoundary = r.maxY > 1 - eps
+
+            let xMin = r.minX * w + (leftEdgeAtBoundary ? 0 : halfGap)
+            let xMax = r.maxX * w - (rightEdgeAtBoundary ? 0 : halfGap)
+            let yMin = r.minY * h + (topEdgeAtBoundary ? 0 : halfGap)
+            let yMax = r.maxY * h - (bottomEdgeAtBoundary ? 0 : halfGap)
+
+            return Slot(
+                frame: CGRect(x: xMin, y: yMin, width: xMax - xMin, height: yMax - yMin),
+                rotationDegrees: seat.rotationDegrees
+            )
         }
     }
 }

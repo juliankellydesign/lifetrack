@@ -96,6 +96,15 @@ class DotDigitView: UIView {
         }
     }
 
+    /// Snap every dot to the off state (scale 0.01, alpha 0). Pair with
+    /// `resetSweep(animated: true)` to play a digit roll-in from blank.
+    func snapToOff() {
+        for dot in dotViews {
+            dot.transform = CGAffineTransform(scaleX: 0.01, y: 0.01)
+            dot.alpha = 0
+        }
+    }
+
     /// Restore dots to their natural state for the current digit. Forces every
     /// dot back (unlike `setDigit`, which skips dots whose pattern is unchanged).
     func resetSweep(animated: Bool) {

@@ -144,6 +144,12 @@ class DotNumberView: UIView {
         }
     }
 
+    func snapToOff() {
+        for dv in digitViews {
+            dv.snapToOff()
+        }
+    }
+
     static func digitValues(for number: Int) -> [Int] {
         if number == 0 { return [0] }
         var n = abs(number)

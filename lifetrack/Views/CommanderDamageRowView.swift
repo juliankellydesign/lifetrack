@@ -21,15 +21,16 @@ class CommanderDamageRowView: UIView {
 
     /// Configures the row to display badges for the given opponents.
     /// - Parameters:
-    ///   - opponentIds: stable IDs (e.g., player.id) of opponents in display order.
-    ///   - playerCount: total players in the game; the icon shows this many dots.
+    ///   - layout: the active PlayerLayout, so each commander icon shows the
+    ///     correct seating diagram with the opponent's seat highlighted.
+    ///   - opponentIds: stable IDs (==seat indices) of opponents in display order.
     ///   - damages: current damage value for each opponent.
-    func configure(opponentIds: [Int], playerCount: Int, damages: [Int]) {
+    func configure(layout: PlayerLayout, opponentIds: [Int], damages: [Int]) {
         badges.forEach { $0.removeFromSuperview() }
         badges.removeAll()
 
         for (i, oppId) in opponentIds.enumerated() {
-            let badge = CommanderDamageBadge(opponentId: oppId, playerCount: playerCount)
+            let badge = CommanderDamageBadge(opponentSeatIndex: oppId, layout: layout)
             badge.setDamage(i < damages.count ? damages[i] : 0, animated: false)
             badge.boardRotation = iconRotation
             badge.onAdjust = { [weak self] delta in
@@ -42,7 +43,7 @@ class CommanderDamageRowView: UIView {
     }
 
     func setDamage(_ damage: Int, forOpponent opponentId: Int) {
-        guard let badge = badges.first(where: { $0.opponentId == opponentId }) else { return }
+        guard let badge = badges.first(where: { $0.opponentSeatIndex == opponentId }) else { return }
         badge.setDamage(damage, animated: true)
         setNeedsLayout()
     }

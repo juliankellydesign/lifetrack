@@ -1,23 +1,27 @@
 import UIKit
 import SwiftUI
 
-/// Counter badge for commander damage. Adds lethal-threshold red coloring on top
-/// of `CounterBadge`'s icon + value + ± controls.
+/// Counter badge for commander damage. Shows the host layout's seat dots with
+/// the source opponent's dot at full opacity and the rest dimmed, so the player
+/// can see which opponent's commander is dealing the damage.
 class CommanderDamageBadge: CounterBadge {
-    let opponentId: Int
-    private let commanderIcon: CommanderIconView
+    let opponentSeatIndex: Int
+    private let layoutIcon: PlayerLayoutIconView
 
-    init(opponentId: Int, playerCount: Int) {
-        self.opponentId = opponentId
-        let icon = CommanderIconView(playerCount: playerCount, highlightedIndex: opponentId)
-        self.commanderIcon = icon
+    init(opponentSeatIndex: Int, layout: PlayerLayout) {
+        self.opponentSeatIndex = opponentSeatIndex
+        let icon = PlayerLayoutIconView(
+            layout: layout,
+            highlightedSeatIndex: opponentSeatIndex
+        )
+        self.layoutIcon = icon
         super.init(iconView: icon)
         dimsIconWhenInactive = false
     }
 
     var boardRotation: CGFloat {
-        get { commanderIcon.boardRotation }
-        set { commanderIcon.boardRotation = newValue }
+        get { layoutIcon.boardRotation }
+        set { layoutIcon.boardRotation = newValue }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) not implemented") }
