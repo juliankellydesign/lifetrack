@@ -1,4 +1,5 @@
 import UIKit
+import SwiftUI
 
 class PlayerCellView: UIView {
     static let contentInset: CGFloat = 12
@@ -34,7 +35,7 @@ class PlayerCellView: UIView {
             badgeBar.isHidden = isBeingEdited
             minusIcon.isHidden = isBeingEdited
             plusIcon.isHidden = isBeingEdited
-            deltaLabel.isHidden = isBeingEdited
+            deltaView.isHidden = isBeingEdited
             if isBeingEdited { cancelDeltaSession() }
         }
     }
@@ -44,7 +45,13 @@ class PlayerCellView: UIView {
     let badgeBar = PlayerCellBadgeBar()
     private let minusIcon = UIImageView()
     private let plusIcon = UIImageView()
-    private let deltaLabel = UILabel()
+    /// The net-change readout uses the same rolling `numericText` transition as
+    /// the badges (`RollingCounterText` driven by `CounterValueModel`), hosted in
+    /// UIKit. `deltaView` is the hosting controller's view; `deltaModel.value`
+    /// holds the current magnitude.
+    private let deltaModel = CounterValueModel()
+    private lazy var deltaHost = UIHostingController(rootView: RollingCounterText(model: deltaModel))
+    private var deltaView: UIView { deltaHost.view }
     private var sessionDelta = 0
     private var deltaIdleTimer: Timer?
 
@@ -52,8 +59,6 @@ class PlayerCellView: UIView {
     private var repeatTimer: Timer?
     private var centerHoldTimer: Timer?
     private var isTouching = false
-    private var pendingTapIncrement: Bool?
-    private var didStartRepeating = false
 
     private static let holdActivationDelay: TimeInterval = 0.5
     private static let repeatInterval: TimeInterval = 0.35
@@ -83,12 +88,13 @@ class PlayerCellView: UIView {
         configureAdjustIcon(minusIcon, named: "IconMinus")
         configureAdjustIcon(plusIcon, named: "IconPlus")
 
-        deltaLabel.font = Typography.lifeDelta.uiFont
-        deltaLabel.textColor = .white
-        deltaLabel.textAlignment = .center
-        deltaLabel.alpha = 0
-        deltaLabel.isUserInteractionEnabled = false
-        contentContainer.addSubview(deltaLabel)
+        deltaModel.font = Typography.lifeDelta.swiftUIFont
+        deltaModel.lineHeight = Typography.lifeDelta.lineHeight
+        deltaModel.tintColor = .white
+        deltaView.backgroundColor = .clear
+        deltaView.isUserInteractionEnabled = false
+        deltaView.alpha = 0
+        contentContainer.addSubview(deltaView)
     }
 
     private func configureAdjustIcon(_ iconView: UIImageView, named: String) {
@@ -128,10 +134,10 @@ class PlayerCellView: UIView {
         let iconY = numRect.midY - iconSize / 2
 
         // The net-change readout reads as "<sign-icon><magnitude>": the sign is the
-        // existing ± icon, the label is just the digits next to it.
-        deltaLabel.sizeToFit()
-        let dW = deltaLabel.bounds.width
-        let dH = deltaLabel.bounds.height
+        // existing ± icon, the rolling label is just the digits next to it. Width
+        // is measured from the Karl font (the hosted SwiftUI text fills the frame).
+        let dH = Typography.lifeDelta.lineHeight
+        let dW = deltaMagnitudeWidth()
         let dGap = Self.deltaSpacing
         let labelY = numRect.midY - dH / 2
 
@@ -143,14 +149,14 @@ class PlayerCellView: UIView {
             // Negative: the digits go between the minus icon and the number, so the
             // minus icon slides left to open that room (animated by registerDelta).
             let labelX = numRect.minX - gap - dW
-            deltaLabel.frame = CGRect(x: labelX, y: labelY, width: dW, height: dH)
+            deltaView.frame = CGRect(x: labelX, y: labelY, width: dW, height: dH)
             minusIcon.frame = CGRect(x: labelX - dGap - iconSize, y: iconY,
                                      width: iconSize, height: iconSize)
         } else {
             minusIcon.frame = CGRect(x: numRect.minX - gap - iconSize, y: iconY,
                                      width: iconSize, height: iconSize)
-            deltaLabel.frame = CGRect(x: plusIcon.frame.maxX + dGap, y: labelY,
-                                      width: dW, height: dH)
+            deltaView.frame = CGRect(x: plusIcon.frame.maxX + dGap, y: labelY,
+                                     width: dW, height: dH)
         }
 
         contentContainer.transform = CGAffineTransform(rotationAngle: rotation * .pi / 180)
@@ -196,10 +202,13 @@ class PlayerCellView: UIView {
 
         switch zone {
         case .left:
-            applyTilt(angle: -7)
+            // Commit ±1 on touch-down (like the badge controls) so rapid tapping
+            // responds to each strike, not each lift. A held press then escalates
+            // to the ±10 repeat after holdActivationDelay.
+            applyChange(increment: false, magnitude: 1, bulk: false)
             scheduleBulkRepeat(increment: false)
         case .right:
-            applyTilt(angle: 7)
+            applyChange(increment: true, magnitude: 1, bulk: false)
             scheduleBulkRepeat(increment: true)
         case .center:
             centerHoldTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
@@ -211,16 +220,14 @@ class PlayerCellView: UIView {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        endTouch(committingTap: true)
+        endTouch()
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        endTouch(committingTap: false)
+        endTouch()
     }
 
     private func scheduleBulkRepeat(increment: Bool) {
-        pendingTapIncrement = increment
-        didStartRepeating = false
         repeatTimer = Timer.scheduledTimer(withTimeInterval: Self.holdActivationDelay,
                                            repeats: false) { [weak self] _ in
             self?.beginBulkRepeat(increment: increment)
@@ -228,7 +235,6 @@ class PlayerCellView: UIView {
     }
 
     private func beginBulkRepeat(increment: Bool) {
-        didStartRepeating = true
         applyChange(increment: increment, magnitude: Self.bulkChangeMagnitude, bulk: true)
         repeatTimer = Timer.scheduledTimer(withTimeInterval: Self.repeatInterval,
                                            repeats: true) { [weak self] _ in
@@ -238,20 +244,12 @@ class PlayerCellView: UIView {
         }
     }
 
-    private func endTouch(committingTap: Bool) {
+    private func endTouch() {
         repeatTimer?.invalidate()
         repeatTimer = nil
         centerHoldTimer?.invalidate()
         centerHoldTimer = nil
-
-        if committingTap, !didStartRepeating, let increment = pendingTapIncrement {
-            applyChange(increment: increment, magnitude: 1, bulk: false)
-        }
-
-        pendingTapIncrement = nil
-        didStartRepeating = false
         isTouching = false
-        applyTilt(angle: 0)
     }
 
     // MARK: - Helpers
@@ -281,10 +279,7 @@ class PlayerCellView: UIView {
         } else {
             Self.lifeChangeHaptic.impactOccurred(intensity: 0.55)
         }
-        // Taps are interruptible: a tap landing mid-roll snaps to the new number
-        // so fast tapping keeps up. Bulk ±10 repeats keep the staggered roll.
-        dotNumberView.updateNumber(lifeTotal, direction: changeDirection,
-                                   animated: true, interruptible: !bulk)
+        dotNumberView.updateNumber(lifeTotal, direction: changeDirection, animated: true)
         registerDelta(increment ? magnitude : -magnitude)
         onLifeChanged?(lifeTotal)
     }
@@ -299,18 +294,27 @@ class PlayerCellView: UIView {
         // Net zero — nothing to show; fade the session out as if it had idled.
         guard sessionDelta != 0 else { endDeltaSession(); return }
 
-        deltaLabel.text = "\(abs(sessionDelta))"
+        // Drive the magnitude through the model so the digits roll (numericText).
+        deltaModel.value = abs(sessionDelta)
         let positive = sessionDelta > 0
         setNeedsLayout()
         UIView.animate(withDuration: 0.2, delay: 0,
                        usingSpringWithDamping: 0.85, initialSpringVelocity: 0,
                        options: .beginFromCurrentState) {
             self.layoutIfNeeded()
-            self.deltaLabel.alpha = 1
+            self.deltaView.alpha = 1
             self.plusIcon.alpha = positive ? 1 : Self.adjustIconAlpha
             self.minusIcon.alpha = positive ? Self.adjustIconAlpha : 1
         }
         scheduleDeltaIdle()
+    }
+
+    /// Width of the current magnitude, measured from the Karl `lifeDelta` font so
+    /// the hosted rolling text can be framed before it lays out. Zero when idle.
+    private func deltaMagnitudeWidth() -> CGFloat {
+        guard sessionDelta != 0 else { return 0 }
+        let s = "\(abs(sessionDelta))" as NSString
+        return ceil(s.size(withAttributes: [.font: Typography.lifeDelta.uiFont]).width)
     }
 
     private func scheduleDeltaIdle() {
@@ -327,13 +331,13 @@ class PlayerCellView: UIView {
     private func endDeltaSession() {
         deltaIdleTimer?.invalidate()
         deltaIdleTimer = nil
-        let frozen = deltaLabel.frame
+        let frozen = deltaView.frame
         sessionDelta = 0
         setNeedsLayout()
         UIView.animate(withDuration: 0.4, delay: 0, options: .beginFromCurrentState) {
-            self.layoutIfNeeded()           // minus icon glides back to resting
-            self.deltaLabel.frame = frozen  // …but the label stays put while fading
-            self.deltaLabel.alpha = 0
+            self.layoutIfNeeded()          // minus icon glides back to resting
+            self.deltaView.frame = frozen  // …but the readout stays put while fading
+            self.deltaView.alpha = 0
             self.minusIcon.alpha = Self.adjustIconAlpha
             self.plusIcon.alpha = Self.adjustIconAlpha
         }
@@ -344,7 +348,8 @@ class PlayerCellView: UIView {
         deltaIdleTimer?.invalidate()
         deltaIdleTimer = nil
         sessionDelta = 0
-        deltaLabel.alpha = 0
+        deltaModel.value = 0
+        deltaView.alpha = 0
         minusIcon.alpha = Self.adjustIconAlpha
         plusIcon.alpha = Self.adjustIconAlpha
         setNeedsLayout()
@@ -379,7 +384,7 @@ class PlayerCellView: UIView {
         minusIcon.alpha = Self.adjustIconAlpha * (1 - progress(for: minusIcon))
         plusIcon.alpha = Self.adjustIconAlpha * (1 - progress(for: plusIcon))
         if sessionDelta != 0 {
-            deltaLabel.alpha = 1 - progress(for: deltaLabel)
+            deltaView.alpha = 1 - progress(for: deltaView)
         }
     }
 
@@ -408,19 +413,5 @@ class PlayerCellView: UIView {
         badgeBar.alpha = 0
         minusIcon.alpha = 0
         plusIcon.alpha = 0
-    }
-
-    private func applyTilt(angle: CGFloat) {
-        let radians = angle * .pi / 180
-        let rotRad = rotation * .pi / 180
-
-        var t = CATransform3DIdentity
-        t.m34 = -1.0 / 500
-        t = CATransform3DRotate(t, radians, -sin(rotRad), cos(rotRad), 0)
-
-        UIView.animate(withDuration: 0.2, delay: 0, usingSpringWithDamping: 1.0,
-                       initialSpringVelocity: 0, options: []) {
-            self.layer.transform = t
-        }
     }
 }

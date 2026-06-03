@@ -5,17 +5,6 @@ class DotDigitView: UIView {
     private var currentDigit: Int?
 
     private static let animationDuration: TimeInterval = 0.3
-    /// Wall-clock time (`CACurrentMediaTime`) until which a roll started here is
-    /// still settling. An *interruptible* change arriving before this snaps
-    /// straight to the new digit instead of starting another roll — so rapid
-    /// taps always show the latest number. Each snap re-extends the window, so a
-    /// sustained fast burst stays in snap mode until you pause longer than one
-    /// roll.
-    private var animatingUntil: CFTimeInterval = 0
-    /// Full settle time of one roll: spring duration + the largest row delay.
-    private var rollWindow: CFTimeInterval {
-        Self.animationDuration + ChangeDirection.decreasing.delay(forRow: DotPatterns.rows - 1)
-    }
 
     func configure(dotSize: CGFloat, spacing: CGFloat) {
         dotViews.forEach { $0.removeFromSuperview() }
@@ -46,25 +35,18 @@ class DotDigitView: UIView {
         bounds.size = CGSize(width: totalW, height: totalH)
     }
 
-    /// `interruptible` (single taps) lets a change that lands while a previous
-    /// roll is still settling snap straight to the new digit instead of queueing
-    /// another roll — this is what keeps rapid tapping locked to the finger.
-    /// Bulk ±10 repeats pass `false` so they always play the staggered roll.
-    func setDigit(_ digit: Int, direction: ChangeDirection?, animated: Bool, interruptible: Bool = false) {
+    /// Animated changes — including rapid taps — play the staggered spring roll.
+    /// The springs use `.beginFromCurrentState`, so a tap landing mid-roll just
+    /// retargets the dots toward the latest digit from wherever they are, keeping
+    /// the roll alive without trailing behind.
+    func setDigit(_ digit: Int, direction: ChangeDirection?, animated: Bool) {
         let pattern = DotPatterns.pattern(for: digit)
         let oldPattern: [Bool]? = currentDigit.map { DotPatterns.pattern(for: $0) }
         currentDigit = digit
 
-        let now = CACurrentMediaTime()
-        let rollInFlight = now < animatingUntil
-
-        // Snap straight to the *new* digit (no spring) when this isn't animated,
-        // or when an interruptible change lands mid-roll. Snapping to the new
-        // pattern — not finalizing the old one — is what stops the visible
-        // number trailing a tap behind. Re-extend the window so the rest of a
-        // fast burst keeps snapping; let it lapse for a one-off static set.
-        if !animated || (interruptible && rollInFlight) {
-            animatingUntil = animated ? now + rollWindow : 0
+        // Snap straight to the digit (no spring) only for non-animated sets, e.g.
+        // a relayout that just needs to paint the current value.
+        if !animated {
             for (i, dot) in dotViews.enumerated() {
                 dot.layer.removeAllAnimations()
                 let active = pattern[i]
@@ -74,9 +56,7 @@ class DotDigitView: UIView {
             return
         }
 
-        // Deliberate change with nothing in flight (or a bulk repeat): play the
-        // staggered spring roll, animating only the dots that actually change.
-        animatingUntil = now + rollWindow
+        // Play the staggered spring roll, animating only the dots that change.
         for i in 0..<dotViews.count {
             let isActive = pattern[i]
             let wasActive = oldPattern?[i] ?? false

@@ -51,7 +51,7 @@ class DotNumberView: UIView {
         return min(size.width / cols, size.height / rows)
     }
 
-    func updateNumber(_ newNumber: Int, direction: ChangeDirection?, animated: Bool, interruptible: Bool = false) {
+    func updateNumber(_ newNumber: Int, direction: ChangeDirection?, animated: Bool) {
         let oldDigits = Self.digitValues(for: number)
         let newDigits = Self.digitValues(for: newNumber)
         number = newNumber
@@ -60,10 +60,8 @@ class DotNumberView: UIView {
 
         if oldDigits.count != newDigits.count || digitViews.isEmpty {
             buildDigitViews(for: newDigits)
-            applyDigits(newDigits, direction: direction, animated: animated, interruptible: interruptible)
-        } else {
-            applyDigits(newDigits, direction: direction, animated: animated, interruptible: interruptible)
         }
+        applyDigits(newDigits, direction: direction, animated: animated)
     }
 
     override func layoutSubviews() {
@@ -107,9 +105,9 @@ class DotNumberView: UIView {
         }
     }
 
-    private func applyDigits(_ digits: [Int], direction: ChangeDirection?, animated: Bool, interruptible: Bool = false) {
+    private func applyDigits(_ digits: [Int], direction: ChangeDirection?, animated: Bool) {
         for (i, digit) in digits.enumerated() where i < digitViews.count {
-            digitViews[i].setDigit(digit, direction: direction, animated: animated, interruptible: interruptible)
+            digitViews[i].setDigit(digit, direction: direction, animated: animated)
         }
     }
 

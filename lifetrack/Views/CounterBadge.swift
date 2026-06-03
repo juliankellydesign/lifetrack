@@ -1,7 +1,9 @@
 import UIKit
 import SwiftUI
 
-/// Drives SwiftUI's `numericText` transition on a single integer.
+/// Drives SwiftUI's `numericText` transition on a single integer. Shared: used
+/// by the commander-damage / counter badges and by the player cell's net-change
+/// readout (`PlayerCellView`).
 @Observable
 final class CounterValueModel {
     var value: Int = 0
@@ -10,7 +12,8 @@ final class CounterValueModel {
     var tintColor: Color = .white
 }
 
-private struct RollingCounterText: View {
+/// A single integer rendered with the rolling `numericText` digit transition.
+struct RollingCounterText: View {
     let model: CounterValueModel
 
     var body: some View {
