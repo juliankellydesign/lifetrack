@@ -11,6 +11,12 @@ class GameBoardView: UIView {
     private static let contentInset: CGFloat = PlayerCellView.contentInset
     private static let gap: CGFloat = BoardInsets.interCellGap
 
+    /// Target dot diameter for the on-board life totals. Cells render at this
+    /// size unless a cell is too small to fit it, in which case every cell
+    /// shrinks together (see `layoutSubviews`). The input overlay is unaffected
+    /// — it doesn't set `maxDotSize`, so its number still scales to fill.
+    private static let targetDotSize: CGFloat = 18
+
     /// Width over which the leading edge of the swipe blends from "natural" to "wiped".
     private static let sweepFeather: CGFloat = 60
 
@@ -141,13 +147,15 @@ class GameBoardView: UIView {
         super.layoutSubviews()
         let slots = layoutSlots(for: layout, in: bounds.size)
         currentSlots = slots
-        let uniformDotSize = Self.uniformDotSize(for: slots)
+        // Fixed target size, but never larger than the smallest cell can fit, so
+        // every cell still shares one uniform dot size.
+        let dotSize = min(Self.uniformDotSize(for: slots), Self.targetDotSize)
 
         for (i, cell) in cellViews.enumerated() {
             guard i < slots.count else { break }
             let slot = slots[i]
             cell.rotation = slot.rotationDegrees
-            cell.maxDotSize = uniformDotSize
+            cell.maxDotSize = dotSize
             cell.frame = slot.frame
         }
 

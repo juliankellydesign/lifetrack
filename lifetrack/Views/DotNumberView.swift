@@ -5,7 +5,9 @@ class DotNumberView: UIView {
     private(set) var number: Int = 0
     var maxDotSize: CGFloat?
 
-    private static let spacingRatio: CGFloat = 0.25
+    /// Gap between dots, as a fraction of dot diameter. 2 / 18 gives a 2pt gap
+    /// at the board's 18pt target dot size, and scales with the dot otherwise.
+    private static let spacingRatio: CGFloat = 2.0 / 18.0
     /// Gap between adjacent digits, in dot-diameter units — one full dot of
     /// space, matching the blank column between digits in the reference font.
     private static let digitGapRatio: CGFloat = 1.0
