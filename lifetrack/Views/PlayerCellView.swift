@@ -52,8 +52,6 @@ class PlayerCellView: UIView {
     private var repeatTimer: Timer?
     private var centerHoldTimer: Timer?
     private var isTouching = false
-    private var pendingTapIncrement: Bool?
-    private var didStartRepeating = false
 
     private static let holdActivationDelay: TimeInterval = 0.5
     private static let repeatInterval: TimeInterval = 0.35
@@ -196,10 +194,13 @@ class PlayerCellView: UIView {
 
         switch zone {
         case .left:
-            applyTilt(angle: -7)
+            // Commit ±1 on touch-down (like the badge controls) so rapid tapping
+            // responds to each strike, not each lift. A held press then escalates
+            // to the ±10 repeat after holdActivationDelay.
+            applyChange(increment: false, magnitude: 1, bulk: false)
             scheduleBulkRepeat(increment: false)
         case .right:
-            applyTilt(angle: 7)
+            applyChange(increment: true, magnitude: 1, bulk: false)
             scheduleBulkRepeat(increment: true)
         case .center:
             centerHoldTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
@@ -211,16 +212,14 @@ class PlayerCellView: UIView {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        endTouch(committingTap: true)
+        endTouch()
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        endTouch(committingTap: false)
+        endTouch()
     }
 
     private func scheduleBulkRepeat(increment: Bool) {
-        pendingTapIncrement = increment
-        didStartRepeating = false
         repeatTimer = Timer.scheduledTimer(withTimeInterval: Self.holdActivationDelay,
                                            repeats: false) { [weak self] _ in
             self?.beginBulkRepeat(increment: increment)
@@ -228,7 +227,6 @@ class PlayerCellView: UIView {
     }
 
     private func beginBulkRepeat(increment: Bool) {
-        didStartRepeating = true
         applyChange(increment: increment, magnitude: Self.bulkChangeMagnitude, bulk: true)
         repeatTimer = Timer.scheduledTimer(withTimeInterval: Self.repeatInterval,
                                            repeats: true) { [weak self] _ in
@@ -238,20 +236,12 @@ class PlayerCellView: UIView {
         }
     }
 
-    private func endTouch(committingTap: Bool) {
+    private func endTouch() {
         repeatTimer?.invalidate()
         repeatTimer = nil
         centerHoldTimer?.invalidate()
         centerHoldTimer = nil
-
-        if committingTap, !didStartRepeating, let increment = pendingTapIncrement {
-            applyChange(increment: increment, magnitude: 1, bulk: false)
-        }
-
-        pendingTapIncrement = nil
-        didStartRepeating = false
         isTouching = false
-        applyTilt(angle: 0)
     }
 
     // MARK: - Helpers
@@ -281,10 +271,7 @@ class PlayerCellView: UIView {
         } else {
             Self.lifeChangeHaptic.impactOccurred(intensity: 0.55)
         }
-        // Taps are interruptible: a tap landing mid-roll snaps to the new number
-        // so fast tapping keeps up. Bulk ±10 repeats keep the staggered roll.
-        dotNumberView.updateNumber(lifeTotal, direction: changeDirection,
-                                   animated: true, interruptible: !bulk)
+        dotNumberView.updateNumber(lifeTotal, direction: changeDirection, animated: true)
         registerDelta(increment ? magnitude : -magnitude)
         onLifeChanged?(lifeTotal)
     }
@@ -408,19 +395,5 @@ class PlayerCellView: UIView {
         badgeBar.alpha = 0
         minusIcon.alpha = 0
         plusIcon.alpha = 0
-    }
-
-    private func applyTilt(angle: CGFloat) {
-        let radians = angle * .pi / 180
-        let rotRad = rotation * .pi / 180
-
-        var t = CATransform3DIdentity
-        t.m34 = -1.0 / 500
-        t = CATransform3DRotate(t, radians, -sin(rotRad), cos(rotRad), 0)
-
-        UIView.animate(withDuration: 0.2, delay: 0, usingSpringWithDamping: 1.0,
-                       initialSpringVelocity: 0, options: []) {
-            self.layer.transform = t
-        }
     }
 }
