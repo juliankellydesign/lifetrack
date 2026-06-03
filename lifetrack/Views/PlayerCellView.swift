@@ -3,6 +3,13 @@ import UIKit
 class PlayerCellView: UIView {
     static let contentInset: CGFloat = 12
 
+    /// ± adjust-direction icons flanking the life total (minus on the player's
+    /// left, plus on the right). Part of the 4pt grid / units-of-20 system:
+    /// 20×20 icons, 20pt gap from the digits, dimmed to 30% opacity.
+    private static let adjustIconSize: CGFloat = 20
+    private static let adjustIconSpacing: CGFloat = 20
+    private static let adjustIconAlpha: CGFloat = 0.3
+
     private(set) var lifeTotal: Int = Player.defaultLife
     var rotation: CGFloat = 0 {
         didSet { badgeBar.iconRotation = rotation }
@@ -16,12 +23,16 @@ class PlayerCellView: UIView {
         didSet {
             dotNumberView.isHidden = isBeingEdited
             badgeBar.isHidden = isBeingEdited
+            minusIcon.isHidden = isBeingEdited
+            plusIcon.isHidden = isBeingEdited
         }
     }
 
     private let contentContainer = UIView()
     let dotNumberView = DotNumberView()
     let badgeBar = PlayerCellBadgeBar()
+    private let minusIcon = UIImageView()
+    private let plusIcon = UIImageView()
 
     private var changeDirection: ChangeDirection?
     private var repeatTimer: Timer?
@@ -55,6 +66,17 @@ class PlayerCellView: UIView {
         addSubview(contentContainer)
         contentContainer.addSubview(dotNumberView)
         contentContainer.addSubview(badgeBar)
+        configureAdjustIcon(minusIcon, named: "IconMinus")
+        configureAdjustIcon(plusIcon, named: "IconPlus")
+    }
+
+    private func configureAdjustIcon(_ iconView: UIImageView, named: String) {
+        iconView.image = UIImage(named: named)?.withRenderingMode(.alwaysTemplate)
+        iconView.tintColor = .white
+        iconView.alpha = Self.adjustIconAlpha
+        iconView.contentMode = .scaleAspectFit
+        iconView.isUserInteractionEnabled = false
+        contentContainer.addSubview(iconView)
     }
 
     override func layoutSubviews() {
@@ -74,6 +96,19 @@ class PlayerCellView: UIView {
 
         dotNumberView.frame = CGRect(x: 0, y: 0, width: contentW, height: dotH)
         badgeBar.frame = CGRect(x: 0, y: dotH, width: contentW, height: badgeRowH)
+
+        // ± icons flank the rendered number (minus left, plus right), vertically
+        // centered on it, with a fixed 20pt gap — placed in the rotated content
+        // frame so they read correctly from each player's seat.
+        let numRect = dotNumberView.numberContentRect
+            .offsetBy(dx: dotNumberView.frame.minX, dy: dotNumberView.frame.minY)
+        let iconSize = Self.adjustIconSize
+        let gap = Self.adjustIconSpacing
+        let iconY = numRect.midY - iconSize / 2
+        minusIcon.frame = CGRect(x: numRect.minX - gap - iconSize, y: iconY,
+                                 width: iconSize, height: iconSize)
+        plusIcon.frame = CGRect(x: numRect.maxX + gap, y: iconY,
+                                width: iconSize, height: iconSize)
 
         contentContainer.transform = CGAffineTransform(rotationAngle: rotation * .pi / 180)
     }
@@ -229,14 +264,15 @@ class PlayerCellView: UIView {
             feather: feather
         )
 
-        let badgeCenter = reference.convert(
-            CGPoint(x: badgeBar.bounds.midX, y: badgeBar.bounds.midY),
-            from: badgeBar
-        )
-        let bPos = axisIsHorizontal ? badgeCenter.x : badgeCenter.y
-        let bSigned = (leadingEdge - bPos) * direction
-        let bProgress = max(0, min(1, bSigned / feather))
-        badgeBar.alpha = 1 - bProgress
+        func progress(for view: UIView) -> CGFloat {
+            let c = reference.convert(CGPoint(x: view.bounds.midX, y: view.bounds.midY), from: view)
+            let pos = axisIsHorizontal ? c.x : c.y
+            return max(0, min(1, ((leadingEdge - pos) * direction) / feather))
+        }
+
+        badgeBar.alpha = 1 - progress(for: badgeBar)
+        minusIcon.alpha = Self.adjustIconAlpha * (1 - progress(for: minusIcon))
+        plusIcon.alpha = Self.adjustIconAlpha * (1 - progress(for: plusIcon))
     }
 
     func resetSweep(animated: Bool) {
@@ -246,17 +282,23 @@ class PlayerCellView: UIView {
                            usingSpringWithDamping: 0.9, initialSpringVelocity: 0,
                            options: .beginFromCurrentState) {
                 self.badgeBar.alpha = 1
+                self.minusIcon.alpha = Self.adjustIconAlpha
+                self.plusIcon.alpha = Self.adjustIconAlpha
             }
         } else {
             badgeBar.alpha = 1
+            minusIcon.alpha = Self.adjustIconAlpha
+            plusIcon.alpha = Self.adjustIconAlpha
         }
     }
 
-    /// Snap content to "off" (dots invisible, badge hidden). Pair with
+    /// Snap content to "off" (dots invisible, badge + icons hidden). Pair with
     /// `resetSweep(animated: true)` to play the roll-in.
     func snapToOff() {
         dotNumberView.snapToOff()
         badgeBar.alpha = 0
+        minusIcon.alpha = 0
+        plusIcon.alpha = 0
     }
 
     private func applyTilt(angle: CGFloat) {
