@@ -27,14 +27,29 @@ class GameBoardView: UIView {
     private var sweepAxisIsHorizontal: Bool = true
     private var sweepDirection: CGFloat = 1
 
+    /// Debug overlay: when true, strokes every cell slot (and the board
+    /// boundary) on top of the cells so the seating grid is visible. Toggled
+    /// from the toolbar button.
+    var showsGridSkeleton: Bool = false {
+        didSet {
+            guard showsGridSkeleton != oldValue else { return }
+            skeletonView.isHidden = !showsGridSkeleton
+            setNeedsLayout()
+        }
+    }
+    private let skeletonView = UIView()
+    private let skeletonShape = CAShapeLayer()
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         setupResetGesture()
+        setupSkeleton()
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         setupResetGesture()
+        setupSkeleton()
     }
 
     private func setupResetGesture() {
@@ -42,6 +57,16 @@ class GameBoardView: UIView {
         resetPanGesture.minimumNumberOfTouches = 1
         resetPanGesture.maximumNumberOfTouches = 1
         addGestureRecognizer(resetPanGesture)
+    }
+
+    private func setupSkeleton() {
+        skeletonView.isUserInteractionEnabled = false
+        skeletonView.isHidden = true
+        skeletonShape.fillColor = UIColor.clear.cgColor
+        skeletonShape.strokeColor = UIColor.systemGreen.withAlphaComponent(0.9).cgColor
+        skeletonShape.lineWidth = 1
+        skeletonView.layer.addSublayer(skeletonShape)
+        addSubview(skeletonView)
     }
 
     func configure(layout: PlayerLayout, players: [Player]) {
@@ -125,6 +150,28 @@ class GameBoardView: UIView {
             cell.maxDotSize = uniformDotSize
             cell.frame = slot.frame
         }
+
+        updateSkeleton(slots: slots)
+    }
+
+    /// Redraw (or clear) the grid-skeleton overlay for the current slots. Kept
+    /// on top of the cells so the outlines stay visible over the dot grids.
+    private func updateSkeleton(slots: [Slot]) {
+        skeletonView.frame = bounds
+        skeletonShape.frame = bounds
+        bringSubviewToFront(skeletonView)
+
+        guard showsGridSkeleton else {
+            skeletonShape.path = nil
+            return
+        }
+
+        let path = UIBezierPath()
+        path.append(UIBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5)))
+        for slot in slots {
+            path.append(UIBezierPath(rect: slot.frame))
+        }
+        skeletonShape.path = path.cgPath
     }
 
     private static func uniformDotSize(for slots: [Slot]) -> CGFloat {

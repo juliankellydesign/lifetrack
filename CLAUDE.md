@@ -2,16 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Keeping this file current
+## Keeping the docs current
 
-**You must update CLAUDE.md whenever you add or materially change a feature, file, or interaction pattern.** Treat the doc as part of the change, not an afterthought:
+**Every commit that adds or materially changes a feature, file, or interaction pattern must update both `CLAUDE.md` and `README.md` in the same commit.** Treat the docs as part of the change, not an afterthought. Before you commit, re-read both files and confirm they still describe what the app actually does — a doc-only follow-up commit is a sign the process failed.
 
-- Adding a new `View` / `Model` / behavior? Add it to the relevant section below.
-- Changing a touch / gesture / haptic pattern? Update the description here so the next agent reads the current rules, not the stale ones.
-- Renaming or removing a file? Update or delete the reference in the same commit.
-- Recent PR descriptions are a good source of truth — `gh pr list --state merged --limit 5 --json number,title,body` to grab summaries when catching up.
+The two files have different audiences, so update them differently:
 
-If you ship a change without updating this file, the next agent will work from a wrong mental model. Don't make them re-discover what you already learned.
+- **`CLAUDE.md`** is the implementation guide for the next agent — file-level detail, the table-centric mental model, gotchas.
+  - Adding a new `View` / `Model` / behavior? Add it to the relevant section below.
+  - Changing a touch / gesture / haptic pattern? Update the description here so the next agent reads the current rules, not the stale ones.
+  - Renaming or removing a file? Update or delete the reference here.
+- **`README.md`** is the human-facing overview — what the app is and how it behaves, no file paths. Keep its feature list and behavior descriptions in sync with what shipped. Don't let it drift into describing shipped features as "planned."
+
+Recent PR descriptions are a good source of truth — `gh pr list --state merged --limit 5 --json number,title,body` to grab summaries when catching up.
+
+If you ship a change without updating these files, the next agent (and the next human) works from a wrong mental model. Don't make them re-discover what you already learned.
 
 ## Project Overview
 
@@ -48,7 +53,7 @@ No test targets configured yet. Use the simulator for verification.
 ### Entry point
 - `AppDelegate.swift` — `@main`, vends a `UISceneConfiguration` for the `UIScene` lifecycle.
 - `SceneDelegate.swift` — Owns the `UIWindow`, sets `GameViewController` as root, disables the idle timer so the screen stays awake.
-- `GameViewController.swift` — Root controller. Holds the active `PlayerLayout`, the `[Player]` array, and the editing state. Boots into 4-player layout-a by default. Hosts the bottom-right settings gear (font picker only — count selection happens in `LayoutSelectorView`), the swipe-to-reset gesture, the `LifeInputOverlay`, and the `LayoutSelectorView` shown after each reset.
+- `GameViewController.swift` — Root controller. Holds the active `PlayerLayout`, the `[Player]` array, and the editing state. Boots into 4-player layout-a by default. Hosts the bottom-right grid-skeleton toggle button (drives both `GameBoardView.showsGridSkeleton` and — via `presentOverlay` — `LifeInputOverlay.showsGridSkeleton`; the icon fills in and turns green when on — count selection happens in `LayoutSelectorView`), the swipe-to-reset gesture, the `LifeInputOverlay`, and the `LayoutSelectorView` shown after each reset.
 
 ### Models
 - `Models/Player.swift` — `Player` struct (`id`, `lifeTotal`, `commanderDamage: [Int: Int]`, `counters: [LifeCounter: Int]`). Constants: `defaultLife = 40`, `lethalCommanderDamage = 21`. `LifeCounter` enum: `poison`, `energy`, `rad`, `experience`.
@@ -61,10 +66,11 @@ No test targets configured yet. Use the simulator for verification.
 - `playercounts/*.svg` — Canonical artwork, one file per variant. Seats are sourced from these files (each `<circle cx cy>` is an `iconCenter`). When you change a layout, **edit the SVG first**, then update the seat array to match — the SVGs are the spec, the Swift data is the implementation.
 
 ### Layout system
-- `Views/GameBoardView.swift` — Owns the cells. Three responsibilities:
+- `Views/GameBoardView.swift` — Owns the cells. Responsibilities:
   - **Project `cellRect` → screen frame.** `layoutSlots(for:in:)` multiplies each unit-square `cellRect` by the board size and shrinks any edge interior to the board by `interCellGap / 2`. That's why `fiveA`'s half-width side cells and full-width bottom cell line up with the same gutter without per-layout code.
   - **Compute a uniform dot size.** `uniformDotSize(for:)` walks every slot, accounts for the rotated content frame (width/height swapped for `±90°`), subtracts content inset and badge-row height, asks `DotNumberView.dotSize(fitting:)` for the largest dot that fits, and takes the **min** across all slots. Every cell is then capped to that value via `cell.maxDotSize`. Without this, bigger cells would render with bigger dots than smaller ones in the same layout.
   - **Drive the swipe-to-reset gesture and the post-reset roll-in.** See "Reset flow" below.
+  - **Draw the grid-skeleton debug overlay.** `showsGridSkeleton` (toggled from the toolbar button) gates a non-interactive `CAShapeLayer` that strokes the board boundary plus every projected slot frame, kept on top via `bringSubviewToFront` in `layoutSubviews`. It reuses the same `slots` the cells lay out from, so the outlines always match exactly where cells paint (gutters show up as the gaps between rects). Pure visualization — no effect on touch or layout.
 
 ### Player cells
 - `Views/PlayerCellView.swift` — One player's life block. Composes a `DotNumberView` (life total) and a `PlayerCellBadgeBar` (commander damage + counters), rotated together to match cell orientation.
@@ -85,8 +91,8 @@ No test targets configured yet. Use the simulator for verification.
 - `Views/CounterBadge.swift` — Shared base for both badge types. Damage / counter numerals are rendered via SwiftUI `Text` hosted in UIKit using `.contentTransition(.numericText(value:))` driven by an `@Observable` model so digits roll up/down per change.
 
 ### Number input overlay
-- `Views/LifeInputOverlay.swift` — Full-screen black backdrop with a hero animation that converges onto the originating cell. Content is inset inside `safeAreaInsets` (Dynamic Island + home indicator) while the backdrop paints edge-to-edge. The overlay receives `layout: PlayerLayout` so the commander-damage row inside it can render the same `PlayerLayoutIconView` highlights as the cell badges. Tap the life total to confirm and dismiss.
-- `Views/NumberPadView.swift` — 50/50 numpad split, 8% white pill backgrounds at 40pt, confirm/delete keys (32pt action icons).
+- `Views/LifeInputOverlay.swift` — Full-screen black backdrop with a hero animation that converges onto the originating cell. Content is inset inside `safeAreaInsets` (Dynamic Island + home indicator) while the backdrop paints edge-to-edge. The overlay receives `layout: PlayerLayout` so the commander-damage row inside it can render the same `PlayerLayoutIconView` highlights as the cell badges. Tap the life total to confirm and dismiss. Also honors the grid-skeleton toggle: it has its own `showsGridSkeleton` (pushed in by `GameViewController.presentOverlay` from the same toolbar state) whose `CAShapeLayer` lives *inside* `contentContainer`, so the container's rotation carries the outlines for free. It strokes the usable area, each region (counter row, life number, damage row, number pad), and every number-pad key (via `NumberPadView.keyFrames`).
+- `Views/NumberPadView.swift` — 50/50 numpad split, 8% white pill backgrounds at 40pt, confirm/delete keys (32pt action icons). Exposes `keyFrames` (each key button's frame) for the overlay's grid skeleton.
 
 ### Dot-matrix rendering
 - `Views/DotPatterns.swift` — Static `5 × 7` grid patterns for digits 0–9 and minus, stored as `[Bool]` arrays. Multiple font variants (Classic, Chunky, Display, Mini, Karl). Also declares `ChangeDirection` and its per-row delay function (`row * 0.035` for `.decreasing`, `(rows - 1 - row) * 0.035` for `.increasing`).
@@ -96,14 +102,14 @@ No test targets configured yet. Use the simulator for verification.
   - `applySweep(...)` — Positional fade for the swipe-to-reset; per-dot interpolation between natural state and "off" based on distance from the swipe's leading edge.
   - `resetSweep(animated:)` — Restores natural state for the current digit. With `animated: true` it uses `ChangeDirection.increasing.delay(forRow:)`, so calling `snapToOff()` then `resetSweep(animated: true)` gives you the bottom-up roll-in.
 - `Views/DotNumberView.swift` — Splits a number into digits, computes dot size from available space, lays out `DotDigitView`s. Accepts optional `maxDotSize` cap so all cells share a uniform dot size. Forwards `applySweep` / `resetSweep` / `snapToOff` to its digit views.
-- `Views/Karl.swift` — Karl typeface bundled in `Resources/Fonts/`. Switchable via the bottom-right gear button (the only thing left in `GameViewController`'s toolbar band — count selection moved to `LayoutSelectorView`).
+- `Views/Karl.swift` — Karl typeface bundled in `Resources/Fonts/`. The dot font is fixed to `DotFontSettings.current`'s default; there's no longer an in-app font picker (the multiple `DotPatterns` variants and `DotFont`/`DotFontSettings` still exist and could back one again, but nothing sets the active font at runtime). The only thing in `GameViewController`'s toolbar band is the grid-skeleton toggle.
 
 ### Reset flow (swipe-out → selector → roll-in)
 
 A reset has three phases. Be careful when editing any of them — they're tuned to feel like one continuous gesture.
 
 1. **Swipe-out (finger-driven).** A pan gesture on `GameBoardView` measures axis + direction on `.began`, then on each `.changed` calls `applySweep(in:axisIsHorizontal:leadingEdge:direction:feather:)` on every cell. Each dot computes its position along the swipe axis (in board coords) and linearly interpolates from natural state to off (scale `0.01`, alpha `0`) over `sweepFeather: 60pt`. The badge bar fades by the same progress. Commits at >50% travel **or** velocity > 800pt/s (medium haptic): the sweep edge animates off-screen, then `onResetRequested` fires.
-2. **Layout selector.** `GameViewController.handleSwipeReset` clears `players`, configures the board to empty, and fades in `LayoutSelectorView`. The toolbar (just the gear) hides.
+2. **Layout selector.** `GameViewController.handleSwipeReset` clears `players`, configures the board to empty, and fades in `LayoutSelectorView`. The toolbar (just the grid-skeleton toggle) hides.
 3. **Roll-in (`playWipeIn`).** When the user picks a layout, `startGame(with:)` rebuilds cells, calls `playWipeIn()`, and fades the selector out concurrently (so the new cells aren't visible behind a transparent selector). `playWipeIn` snaps every cell's content to "off" via `cell.snapToOff()`, then dispatches each cell's `resetSweep(animated: true)` on a `seat.clockwiseIndex * 100ms` delay. Inside each cell, the digit dots use `ChangeDirection.increasing.delay(forRow:)` so they fill in bottom-up — the same animation a +1 tap plays. The clockwise order is *static* per layout: each `PlayerSeat` declares its own `clockwiseIndex`, so changing the order means editing that field in `PlayerLayout.swift` rather than rewriting math.
 
 The visual story: numbers swept off → blank → numbers reappear, each cell springing in clockwise around the table. It echoes the per-tap roll, just amplified across all seats. The clockwise direction matches how a paper life-counter would naturally fill in around a table when you go "around the horn."
@@ -112,7 +118,7 @@ The visual story: numbers swept off → blank → numbers reappear, each cell sp
 - **Rotation handling.** Always size content for the rotated coordinate space first (swap width/height for `±90°`), then apply `CGAffineTransform(rotationAngle:)`. Anything that takes a touch point or measures along the player's axis must go through a rotation-aware helper (`PlayerCellView.playerFraction`, `PlayerLayoutIconView.boardRotation`) — never compare raw screen coords to a rotated cell's bounds. The 3D tilt axis is `(x: -sin(R), y: cos(R), z: 0)` so press tilt always pitches the player's edge of the cell *away* from them, "into the table."
 - **Animation.** Per-dot spring animations with row-based delay (`UIView.animate(withDuration: 0.3, delay:, usingSpringWithDamping: 0.7, ...)`). `ChangeDirection` is set in the same state transaction as the value change so dots see the correct delay. The post-reset roll-in reuses the same per-dot animation but pre-snaps every dot off via `snapToOff()` and adds a clockwise inter-cell stagger (see "Reset flow"). When you add a new animation that touches dots, prefer composing these primitives over writing a new one.
 - **Haptics.** Light impact for per-tick changes (life ±1, badge ±1). Medium impact for bulk repeats (life ±10), edit-overlay activation, and swipe-reset commit. Pre-warmed `UIImpactFeedbackGenerator`s held as `static` properties on `PlayerCellView` so the first tap doesn't pay warm-up cost.
-- **Layout selector vs gear button.** Player count + variant is picked in `LayoutSelectorView` (post-reset, full-screen). The gear in the bottom-right is *only* the font picker. Don't add count-selection UI to the gear; don't add font-selection UI to the selector.
+- **Layout selector vs toolbar button.** Player count + variant is picked in `LayoutSelectorView` (post-reset, full-screen). The button in the bottom-right is *only* the grid-skeleton debug toggle. Don't add count-selection UI to the toolbar; don't add other controls to the selector.
 
 ## gstack
 

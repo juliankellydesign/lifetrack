@@ -9,6 +9,10 @@ enum NumberPadKey {
 class NumberPadView: UIView {
     var onKey: ((NumberPadKey) -> Void)?
 
+    /// Key-button frames in this view's own coordinate space, after layout.
+    /// Used by the grid-skeleton debug overlay to outline each key.
+    var keyFrames: [CGRect] { buttons.map { $0.frame } }
+
     private var buttons: [UIButton] = []
     private let keys: [[NumberPadKey]] = [
         [.digit(1), .digit(2), .digit(3)],

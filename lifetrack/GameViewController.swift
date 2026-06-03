@@ -7,9 +7,11 @@ class GameViewController: UIViewController {
 
     private let gameBoardView = GameBoardView()
     private let toolbarView = UIView()
-    private let settingsButton = UIButton()
+    private let gridButton = UIButton()
     private let overlayView = LifeInputOverlay()
     private let layoutSelectorView = LayoutSelectorView()
+
+    private var showsGridSkeleton = false
 
     override var prefersStatusBarHidden: Bool { true }
     override var prefersHomeIndicatorAutoHidden: Bool { true }
@@ -50,12 +52,11 @@ class GameViewController: UIViewController {
     }
 
     private func setupToolbar() {
-        settingsButton.setImage(UIImage(systemName: "gearshape"), for: .normal)
-        settingsButton.tintColor = .gray
-        settingsButton.addAction(UIAction { [weak self] _ in
-            self?.presentSettings()
+        updateGridButtonAppearance()
+        gridButton.addAction(UIAction { [weak self] _ in
+            self?.toggleGridSkeleton()
         }, for: .touchUpInside)
-        toolbarView.addSubview(settingsButton)
+        toolbarView.addSubview(gridButton)
         view.addSubview(toolbarView)
     }
 
@@ -108,32 +109,24 @@ class GameViewController: UIViewController {
         let pad: CGFloat = 16
         let btnSize: CGFloat = 36
         let y = (toolbarView.bounds.height - btnSize) / 2
-        settingsButton.frame = CGRect(
+        gridButton.frame = CGRect(
             x: toolbarView.bounds.width - pad - btnSize,
             y: y, width: btnSize, height: btnSize
         )
     }
 
-    // MARK: - Settings
+    // MARK: - Grid skeleton
 
-    private func presentSettings() {
-        let alert = UIAlertController(
-            title: "Font",
-            message: nil,
-            preferredStyle: .actionSheet
-        )
-        let activeID = DotFontSettings.current.id
-        for font in DotFont.allFonts {
-            let mark = (font.id == activeID) ? "✓ " : "   "
-            alert.addAction(UIAlertAction(title: mark + font.displayName, style: .default) { [weak self] _ in
-                DotFontSettings.set(font)
-                self?.gameBoardView.setNeedsLayout()
-            })
-        }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.popoverPresentationController?.sourceView = settingsButton
-        alert.popoverPresentationController?.sourceRect = settingsButton.bounds
-        present(alert, animated: true)
+    private func toggleGridSkeleton() {
+        showsGridSkeleton.toggle()
+        gameBoardView.showsGridSkeleton = showsGridSkeleton
+        updateGridButtonAppearance()
+    }
+
+    private func updateGridButtonAppearance() {
+        let symbol = showsGridSkeleton ? "square.grid.2x2.fill" : "square.grid.2x2"
+        gridButton.setImage(UIImage(systemName: symbol), for: .normal)
+        gridButton.tintColor = showsGridSkeleton ? .systemGreen : .gray
     }
 
     // MARK: - State
@@ -205,6 +198,7 @@ class GameViewController: UIViewController {
 
         let player = players[index]
         let opponents = players.filter { $0.id != player.id }.sorted(by: { $0.id < $1.id })
+        overlayView.showsGridSkeleton = showsGridSkeleton
         overlayView.prepare(
             lifeTotal: player.lifeTotal,
             commanderDamage: player.commanderDamage,
