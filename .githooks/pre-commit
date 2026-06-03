@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+#
+# Lifetrack docs guard.
+#
+# CLAUDE.md asks every commit that changes app behavior to update README.md
+# and CLAUDE.md in the same commit. This hook is the backstop: if you stage
+# source changes but neither doc, it stops the commit and reminds you.
+#
+# It can't write the prose for you — it only flags the gap. If a commit
+# genuinely needs no doc change (formatting, a typo fix, build config), bypass
+# it with:  git commit --no-verify
+
+set -euo pipefail
+
+staged="$(git diff --cached --name-only --diff-filter=ACMR)"
+
+# Source changes worth documenting: Swift under lifetrack/, or the SVG specs.
+source_changed="$(printf '%s\n' "$staged" | grep -E '^lifetrack/.*\.swift$|\.svg$' || true)"
+docs_changed="$(printf '%s\n' "$staged" | grep -E '^(README\.md|CLAUDE\.md)$' || true)"
+
+if [ -n "$source_changed" ] && [ -z "$docs_changed" ]; then
+  echo "──────────────────────────────────────────────────────────────" >&2
+  echo " Docs guard: you staged source changes but no doc update." >&2
+  echo "" >&2
+  echo " Changed source files:" >&2
+  printf '%s\n' "$source_changed" | sed 's/^/   • /' >&2
+  echo "" >&2
+  echo " Re-read README.md and CLAUDE.md and update whatever this commit" >&2
+  echo " changed in app behavior, then stage them." >&2
+  echo "" >&2
+  echo " If this commit truly needs no doc change, bypass with:" >&2
+  echo "   git commit --no-verify" >&2
+  echo "──────────────────────────────────────────────────────────────" >&2
+  exit 1
+fi
+
+exit 0

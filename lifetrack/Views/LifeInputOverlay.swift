@@ -15,6 +15,18 @@ class LifeInputOverlay: UIView {
     let damageRow = CommanderDamageRowView()
     let numberPadView = NumberPadView()
 
+    /// Debug overlay: when true, strokes the usable content area plus every
+    /// laid-out region (counter row, life number, damage row, number pad) and
+    /// each number-pad key. Mirrors `GameBoardView.showsGridSkeleton`; the
+    /// controller pushes the current toggle state in when presenting.
+    var showsGridSkeleton = false {
+        didSet {
+            guard showsGridSkeleton != oldValue else { return }
+            setNeedsLayout()
+        }
+    }
+    private let skeletonShape = CAShapeLayer()
+
     /// Padding from the safe-area edges of the screen to the input view's content.
     private static let horizontalEdgePadding: CGFloat = 0   // safe area already covers this in landscape
     private static let verticalEdgePadding: CGFloat = 8
@@ -55,6 +67,12 @@ class LifeInputOverlay: UIView {
         contentContainer.addSubview(damageRow)
         numberPadView.onKey = { [weak self] key in self?.handleKey(key) }
         contentContainer.addSubview(numberPadView)
+
+        skeletonShape.fillColor = UIColor.clear.cgColor
+        skeletonShape.strokeColor = UIColor.systemGreen.withAlphaComponent(0.9).cgColor
+        skeletonShape.lineWidth = 1
+        skeletonShape.zPosition = 999 // keep on top of the region subviews
+        contentContainer.layer.addSublayer(skeletonShape)
 
         damageRow.onAdjustDamage = { [weak self] opponentId, delta in
             self?.adjustDamage(forOpponent: opponentId, by: delta)
@@ -234,6 +252,36 @@ class LifeInputOverlay: UIView {
         }
 
         contentContainer.transform = CGAffineTransform(rotationAngle: rotRad)
+
+        updateSkeleton()
+    }
+
+    /// Redraw (or clear) the grid-skeleton overlay. Drawn in `contentContainer`'s
+    /// coordinate space — since the shape layer lives inside `contentContainer`,
+    /// the container's rotation transform carries the outlines along for free.
+    private func updateSkeleton() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        skeletonShape.frame = contentContainer.bounds
+
+        guard showsGridSkeleton else {
+            skeletonShape.path = nil
+            CATransaction.commit()
+            return
+        }
+
+        numberPadView.layoutIfNeeded()
+        let path = UIBezierPath()
+        path.append(UIBezierPath(rect: contentContainer.bounds.insetBy(dx: 0.5, dy: 0.5)))
+        for region in [counterRow.frame, dotNumberView.frame, damageRow.frame, numberPadView.frame] {
+            path.append(UIBezierPath(rect: region))
+        }
+        let padOrigin = numberPadView.frame.origin
+        for key in numberPadView.keyFrames {
+            path.append(UIBezierPath(rect: key.offsetBy(dx: padOrigin.x, dy: padOrigin.y)))
+        }
+        skeletonShape.path = path.cgPath
+        CATransaction.commit()
     }
 
     private func clamp(_ x: CGFloat, min lo: CGFloat, max hi: CGFloat) -> CGFloat {
