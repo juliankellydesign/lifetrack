@@ -95,14 +95,14 @@ No test targets configured yet. Use the simulator for verification.
 - `Views/NumberPadView.swift` — 50/50 numpad split, 8% white pill backgrounds at 40pt, confirm/delete keys (32pt action icons). Exposes `keyFrames` (each key button's frame) for the overlay's grid skeleton.
 
 ### Dot-matrix rendering
-- `Views/DotPatterns.swift` — Static `5 × 7` grid patterns for digits 0–9 and minus, stored as `[Bool]` arrays. Multiple font variants (Classic, Chunky, Display, Mini, Karl). Also declares `ChangeDirection` and its per-row delay function (`row * 0.035` for `.decreasing`, `(rows - 1 - row) * 0.035` for `.increasing`).
-- `Views/DotDigitView.swift` — Renders one digit as 35 dots positioned at offsets. Each dot animates independently. Key methods:
+- `Views/DotPatterns.swift` — A single `5 × 5` bitmap font (`DotFont.grid`) for digits 0–9 and minus, stored as `[Bool]` arrays indexed by value (`digits[0] == "0"`). Transcribed from the reference artwork; full-width strokes. `DotFontSettings.current` just vends this one font (the old multi-font picker is gone) and `DotPatterns` proxies `rows`/`columns`/`pattern(for:)`/`minus` through it, so the renderers stay font-size-agnostic — change `rows`/`columns` + the arrays and everything reflows. Also declares `ChangeDirection` and its per-row delay function (`row * 0.035` for `.decreasing`, `(rows - 1 - row) * 0.035` for `.increasing`).
+- `Views/DotDigitView.swift` — Renders one digit as `rows × columns` dots (25 for the 5×5 font) positioned at offsets. Each dot animates independently. Key methods:
   - `setDigit(_:direction:animated:)` — Diffs old vs new pattern; only animates dots that change, with row-staggered delay from `direction`.
   - `snapToOff()` — Snaps every dot to scale `0.01` / alpha `0` instantly. Used to prep a roll-in.
   - `applySweep(...)` — Positional fade for the swipe-to-reset; per-dot interpolation between natural state and "off" based on distance from the swipe's leading edge.
   - `resetSweep(animated:)` — Restores natural state for the current digit. With `animated: true` it uses `ChangeDirection.increasing.delay(forRow:)`, so calling `snapToOff()` then `resetSweep(animated: true)` gives you the bottom-up roll-in.
-- `Views/DotNumberView.swift` — Splits a number into digits, computes dot size from available space, lays out `DotDigitView`s. Accepts optional `maxDotSize` cap so all cells share a uniform dot size. Forwards `applySweep` / `resetSweep` / `snapToOff` to its digit views.
-- `Views/Karl.swift` — Karl typeface bundled in `Resources/Fonts/`. The dot font is fixed to `DotFontSettings.current`'s default; there's no longer an in-app font picker (the multiple `DotPatterns` variants and `DotFont`/`DotFontSettings` still exist and could back one again, but nothing sets the active font at runtime). The only thing in `GameViewController`'s toolbar band is the grid-skeleton toggle.
+- `Views/DotNumberView.swift` — Splits a number into digits, computes dot size from available space, lays out `DotDigitView`s. Adjacent digits are separated by a one-dot-diameter gap (`digitGapRatio`); the dot-size fitting math (`dotSize(fitting:)` and `computeDotSize`) reserves room for those `count - 1` gaps so digits never overflow. Accepts optional `maxDotSize` cap so all cells share a uniform dot size. Forwards `applySweep` / `resetSweep` / `snapToOff` to its digit views.
+- `Views/Karl.swift` — Karl typeface bundled in `Resources/Fonts/`, used for the number-pad digits. The dot-matrix life total uses the single `DotFont.grid` (see `DotPatterns.swift`); there's no in-app font picker. The only thing in `GameViewController`'s toolbar band is the grid-skeleton toggle.
 
 ### Reset flow (swipe-out → selector → roll-in)
 

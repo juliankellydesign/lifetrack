@@ -35,7 +35,7 @@ The app is Commander-first: players start at **40 life**, and it tracks the thin
 
 ## Implementation notes
 
-UIKit, rewritten from an original SwiftUI prototype. SwiftUI is hosted only where it earns its place — e.g. `.contentTransition(.numericText)` for rolling badge digits. Life totals are drawn as a 5×7 dot matrix, with each dot animating independently on a row-staggered spring. No external dependencies.
+UIKit, rewritten from an original SwiftUI prototype. SwiftUI is hosted only where it earns its place — e.g. `.contentTransition(.numericText)` for rolling badge digits. Life totals are drawn as a 5×5 dot matrix, with each dot animating independently on a row-staggered spring. No external dependencies.
 
 For the architecture, the table-centric mental model, and per-file detail, see [`CLAUDE.md`](CLAUDE.md).
 

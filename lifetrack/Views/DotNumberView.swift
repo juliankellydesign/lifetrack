@@ -6,6 +6,9 @@ class DotNumberView: UIView {
     var maxDotSize: CGFloat?
 
     private static let spacingRatio: CGFloat = 0.25
+    /// Gap between adjacent digits, in dot-diameter units — one full dot of
+    /// space, matching the blank column between digits in the reference font.
+    private static let digitGapRatio: CGFloat = 1.0
 
     private var lastLayoutSize: CGSize = .zero
     private var lastMaxDotSize: CGFloat?
@@ -40,6 +43,7 @@ class DotNumberView: UIView {
         let count = CGFloat(digitCount)
         let cols = count * CGFloat(DotPatterns.columns)
             + count * CGFloat(DotPatterns.columns - 1) * spacingRatio
+            + (count - 1) * digitGapRatio
         let rows = CGFloat(DotPatterns.rows)
             + CGFloat(DotPatterns.rows - 1) * spacingRatio
         return min(size.width / cols, size.height / rows)
@@ -82,10 +86,11 @@ class DotNumberView: UIView {
 
         let dotSz = computeDotSize(digitCount: digits.count)
         let spc = dotSz * Self.spacingRatio
+        let digitGap = dotSz * Self.digitGapRatio
 
         let digitW = CGFloat(DotPatterns.columns) * dotSz + CGFloat(DotPatterns.columns - 1) * spc
         let digitH = CGFloat(DotPatterns.rows) * dotSz + CGFloat(DotPatterns.rows - 1) * spc
-        let totalW = CGFloat(digits.count) * digitW
+        let totalW = CGFloat(digits.count) * digitW + CGFloat(digits.count - 1) * digitGap
 
         var x = (bounds.width - totalW) / 2
         let y = (bounds.height - digitH) / 2
@@ -96,7 +101,7 @@ class DotNumberView: UIView {
             dv.frame = CGRect(x: x, y: y, width: dv.contentWidth, height: dv.contentHeight)
             addSubview(dv)
             digitViews.append(dv)
-            x += digitW
+            x += digitW + digitGap
         }
     }
 
@@ -115,6 +120,7 @@ class DotNumberView: UIView {
         let count = CGFloat(digitCount)
         let cols = count * CGFloat(DotPatterns.columns)
             + count * CGFloat(DotPatterns.columns - 1) * Self.spacingRatio
+            + (count - 1) * Self.digitGapRatio
         let rows = CGFloat(DotPatterns.rows)
             + CGFloat(DotPatterns.rows - 1) * Self.spacingRatio
         return min(bounds.width / cols, bounds.height / rows, maxDotSize ?? .infinity)
