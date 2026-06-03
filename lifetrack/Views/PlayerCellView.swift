@@ -203,7 +203,10 @@ class PlayerCellView: UIView {
         } else {
             Self.lifeChangeHaptic.impactOccurred(intensity: 0.55)
         }
-        dotNumberView.updateNumber(lifeTotal, direction: changeDirection, animated: true)
+        // Taps are interruptible: a tap landing mid-roll snaps to the new number
+        // so fast tapping keeps up. Bulk ±10 repeats keep the staggered roll.
+        dotNumberView.updateNumber(lifeTotal, direction: changeDirection,
+                                   animated: true, interruptible: !bulk)
         onLifeChanged?(lifeTotal)
     }
 
