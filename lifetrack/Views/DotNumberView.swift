@@ -51,7 +51,7 @@ class DotNumberView: UIView {
         return min(size.width / cols, size.height / rows)
     }
 
-    func updateNumber(_ newNumber: Int, direction: ChangeDirection?, animated: Bool) {
+    func updateNumber(_ newNumber: Int, direction: ChangeDirection?, animated: Bool, interruptible: Bool = false) {
         let oldDigits = Self.digitValues(for: number)
         let newDigits = Self.digitValues(for: newNumber)
         number = newNumber
@@ -60,9 +60,9 @@ class DotNumberView: UIView {
 
         if oldDigits.count != newDigits.count || digitViews.isEmpty {
             buildDigitViews(for: newDigits)
-            applyDigits(newDigits, direction: direction, animated: animated)
+            applyDigits(newDigits, direction: direction, animated: animated, interruptible: interruptible)
         } else {
-            applyDigits(newDigits, direction: direction, animated: animated)
+            applyDigits(newDigits, direction: direction, animated: animated, interruptible: interruptible)
         }
     }
 
@@ -107,15 +107,33 @@ class DotNumberView: UIView {
         }
     }
 
-    private func applyDigits(_ digits: [Int], direction: ChangeDirection?, animated: Bool) {
+    private func applyDigits(_ digits: [Int], direction: ChangeDirection?, animated: Bool, interruptible: Bool = false) {
         for (i, digit) in digits.enumerated() where i < digitViews.count {
-            digitViews[i].setDigit(digit, direction: direction, animated: animated)
+            digitViews[i].setDigit(digit, direction: direction, animated: animated, interruptible: interruptible)
         }
     }
 
     var actualDotSize: CGFloat {
         let digits = Self.digitValues(for: number)
         return computeDotSize(digitCount: digits.count)
+    }
+
+    /// Bounding box of the rendered number within this view's bounds (digits are
+    /// centered on both axes). Computed from the same layout math as
+    /// `buildDigitViews`, so it's valid even before the digit subviews lay out —
+    /// callers (e.g. the cell's ± icons) can position against it during layout.
+    var numberContentRect: CGRect {
+        guard bounds.width > 0 && bounds.height > 0 else { return .zero }
+        let digits = Self.digitValues(for: number)
+        let dotSz = computeDotSize(digitCount: digits.count)
+        let spc = dotSz * Self.spacingRatio
+        let digitGap = dotSz * Self.digitGapRatio
+        let digitW = CGFloat(DotPatterns.columns) * dotSz + CGFloat(DotPatterns.columns - 1) * spc
+        let digitH = CGFloat(DotPatterns.rows) * dotSz + CGFloat(DotPatterns.rows - 1) * spc
+        let totalW = CGFloat(digits.count) * digitW + CGFloat(digits.count - 1) * digitGap
+        let x = (bounds.width - totalW) / 2
+        let y = (bounds.height - digitH) / 2
+        return CGRect(x: x, y: y, width: totalW, height: digitH)
     }
 
     private func computeDotSize(digitCount: Int) -> CGFloat {

@@ -45,6 +45,10 @@ class GameBoardView: UIView {
     }
     private let skeletonView = UIView()
     private let skeletonShape = CAShapeLayer()
+    /// Tap-zone overlay drawn alongside the slot outlines: the two dividers that
+    /// split each cell into its left / center / right thirds, oriented along the
+    /// player's axis (vertical for 0°/180° seats, horizontal for ±90°).
+    private let tapZoneShape = CAShapeLayer()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -62,6 +66,12 @@ class GameBoardView: UIView {
         resetPanGesture.addTarget(self, action: #selector(handleResetSwipe(_:)))
         resetPanGesture.minimumNumberOfTouches = 1
         resetPanGesture.maximumNumberOfTouches = 1
+        // A life tap commits on touch-up. By default UIKit holds each cell's
+        // `touchesEnded` until this pan recognizer resolves, which delays every
+        // tap's increment (and bunches up rapid taps). Deliver touch-up
+        // immediately; a real swipe still cancels the cell touch via
+        // `cancelsTouchesInView`, so the gesture itself is unaffected.
+        resetPanGesture.delaysTouchesEnded = false
         addGestureRecognizer(resetPanGesture)
     }
 
@@ -72,6 +82,12 @@ class GameBoardView: UIView {
         skeletonShape.strokeColor = UIColor.systemGreen.withAlphaComponent(0.9).cgColor
         skeletonShape.lineWidth = 1
         skeletonView.layer.addSublayer(skeletonShape)
+
+        tapZoneShape.fillColor = UIColor.clear.cgColor
+        tapZoneShape.strokeColor = UIColor.systemOrange.withAlphaComponent(0.9).cgColor
+        tapZoneShape.lineWidth = 1
+        skeletonView.layer.addSublayer(tapZoneShape)
+
         addSubview(skeletonView)
     }
 
@@ -167,10 +183,12 @@ class GameBoardView: UIView {
     private func updateSkeleton(slots: [Slot]) {
         skeletonView.frame = bounds
         skeletonShape.frame = bounds
+        tapZoneShape.frame = bounds
         bringSubviewToFront(skeletonView)
 
         guard showsGridSkeleton else {
             skeletonShape.path = nil
+            tapZoneShape.path = nil
             return
         }
 
@@ -180,6 +198,27 @@ class GameBoardView: UIView {
             path.append(UIBezierPath(rect: slot.frame))
         }
         skeletonShape.path = path.cgPath
+
+        // Tap thirds: draw the two dividers along the player's left→right axis.
+        // 0°/180° seats split horizontally (vertical lines); ±90° split
+        // vertically (horizontal lines) so each region matches `tapZone(at:)`.
+        let tapPath = UIBezierPath()
+        for slot in slots {
+            let f = slot.frame
+            let axisIsHorizontal = abs(Int(slot.rotationDegrees)) != 90
+            for t in [1.0 / 3.0, 2.0 / 3.0] {
+                if axisIsHorizontal {
+                    let x = f.minX + f.width * t
+                    tapPath.move(to: CGPoint(x: x, y: f.minY))
+                    tapPath.addLine(to: CGPoint(x: x, y: f.maxY))
+                } else {
+                    let y = f.minY + f.height * t
+                    tapPath.move(to: CGPoint(x: f.minX, y: y))
+                    tapPath.addLine(to: CGPoint(x: f.maxX, y: y))
+                }
+            }
+        }
+        tapZoneShape.path = tapPath.cgPath
     }
 
     private static func uniformDotSize(for slots: [Slot]) -> CGFloat {

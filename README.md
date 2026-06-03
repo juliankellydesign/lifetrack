@@ -28,14 +28,14 @@ The app is Commander-first: players start at **40 life**, and it tracks the thin
 
 ## Interaction
 
-- **Adjust life.** Tap the left third of your area for −1, the right third for +1 (committed on lift, with a light haptic). Hold a side past ~0.5s to repeat in steps of 10 with a medium haptic per tick.
+- **Adjust life.** Tap the left third of your area for −1, the right third for +1 (committed on lift, with a light haptic). A dim − and + flank your life total — minus on your left, plus on your right — to label which side does what. As you adjust, the icon on the side you're tapping lights up and a running tally of your net change appears next to it (tap +7 then −2 and it shows 5 by the plus); it fades away a moment after you stop. Tap as fast as you like — rapid taps skip the staggered roll so the number keeps pace with your finger. Hold a side past ~0.5s to repeat in steps of 10 with a medium haptic per tick.
 - **Type an exact total.** Hold the center of your area to open a full-screen number pad that animates out of your cell; tap the total to confirm.
 - **Reset the game.** Swipe across the board to wipe every life total off, dot by dot, following your finger. Commit the swipe and the layout selector fades in; pick a layout and the new totals roll back in one cell at a time, clockwise around the table — the same per-tap dot animation, amplified across all seats.
-- **Grid skeleton.** A toggle button in the bottom-right overlays the seating grid — the board boundary and every cell outline — on top of the totals, so you can see exactly how the current layout divides the screen. While it's on, the number-input view shows its own skeleton too (life number, counter/damage rows, and every keypad key). Tap again to hide it.
+- **Grid skeleton.** A toggle button in the bottom-right overlays the seating grid — the board boundary and every cell outline in green — on top of the totals, so you can see exactly how the current layout divides the screen. Each cell also shows its tap targets in orange: the two dividers that split it into the left/right (−1/+1) and center (open keypad) zones, oriented the way that player reads. While it's on, the number-input view shows its own skeleton too (life number, counter/damage rows, and every keypad key). Tap again to hide it.
 
 ## Implementation notes
 
-UIKit, rewritten from an original SwiftUI prototype. SwiftUI is hosted only where it earns its place — e.g. `.contentTransition(.numericText)` for rolling badge digits. Life totals are drawn as a 5×5 dot matrix, with each dot animating independently on a row-staggered spring. No external dependencies.
+UIKit, rewritten from an original SwiftUI prototype. SwiftUI is hosted only where it earns its place — e.g. `.contentTransition(.numericText)` for rolling badge digits. Life totals are drawn as a 5×5 dot matrix, with each dot animating independently on a row-staggered spring. Text styles (the Karl typeface used for keypad and badge numerals) and spacing both run off small sets of shared design tokens rather than ad-hoc values, on a 4pt grid. No external dependencies.
 
 For the architecture, the table-centric mental model, and per-file detail, see [`CLAUDE.md`](CLAUDE.md).
 

@@ -31,8 +31,6 @@ class NumberPadView: UIView {
         buildButtons()
     }
 
-    private static let digitFontSize: CGFloat = 32
-    private static let digitLineHeight: CGFloat = 36
     private static let actionIconSize: CGFloat = 32
 
     static let rowSpacing: CGFloat = 10
@@ -92,14 +90,15 @@ class NumberPadView: UIView {
     }
 
     private static func digitTitle(_ s: String) -> NSAttributedString {
+        let digit = Typography.keypadDigit
         let style = NSMutableParagraphStyle()
-        style.minimumLineHeight = digitLineHeight
-        style.maximumLineHeight = digitLineHeight
+        style.minimumLineHeight = digit.lineHeight
+        style.maximumLineHeight = digit.lineHeight
         style.alignment = .center
         return NSAttributedString(
             string: s,
             attributes: [
-                .font: Karl.font(Karl.medium, size: digitFontSize),
+                .font: digit.uiFont,
                 .foregroundColor: UIColor.white,
                 .paragraphStyle: style,
             ]

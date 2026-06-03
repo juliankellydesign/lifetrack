@@ -5,8 +5,8 @@ import SwiftUI
 @Observable
 final class CounterValueModel {
     var value: Int = 0
-    var fontSize: CGFloat = 28
-    var lineHeight: CGFloat = 32
+    var font: Font = Typography.badgeInputValue.swiftUIFont
+    var lineHeight: CGFloat = Typography.badgeInputValue.lineHeight
     var tintColor: Color = .white
 }
 
@@ -15,7 +15,7 @@ private struct RollingCounterText: View {
 
     var body: some View {
         Text(verbatim: "\(model.value)")
-            .font(Font.custom(Karl.medium, size: model.fontSize).monospacedDigit())
+            .font(model.font)
             .foregroundStyle(model.tintColor)
             .frame(height: model.lineHeight)
             .contentTransition(.numericText(value: Double(model.value)))
@@ -58,8 +58,6 @@ class CounterBadge: UIView {
     /// Fixed sizes used when `showsAdjustControls` is true (life input view).
     static let inputIconSize: CGFloat = 32
     static let inputGlyphSize: CGFloat = 16
-    static let inputValueFontSize: CGFloat = 28
-    static let inputValueLineHeight: CGFloat = 32
     static let inputGlyphSpacing: CGFloat = 4
     static let inputBadgeHeight: CGFloat = 40
     static let inputPillPadding: CGFloat = 8
@@ -67,8 +65,6 @@ class CounterBadge: UIView {
 
     /// Fixed sizes used when `showsAdjustControls` is false (player cell badge bar).
     static let inlineIconSize: CGFloat = 24
-    static let inlineValueFontSize: CGFloat = 24
-    static let inlineValueLineHeight: CGFloat = 28
     private static let inlineGap: CGFloat = 4
     private static let dimmedAlpha: CGFloat = 0.2
     private static let longPressDelay: TimeInterval = 0.35
@@ -167,11 +163,12 @@ class CounterBadge: UIView {
         if !showsAdjustControls {
             // Read-only inline display: fixed 24pt icon and value, vertically centered.
             let icon = Self.inlineIconSize
-            valueModel.fontSize = Self.inlineValueFontSize
-            valueModel.lineHeight = Self.inlineValueLineHeight
+            let style = Typography.badgeInlineValue
+            valueModel.font = style.swiftUIFont
+            valueModel.lineHeight = style.lineHeight
 
             let iconY = (h - icon) / 2
-            let valueY = (h - Self.inlineValueLineHeight) / 2
+            let valueY = (h - style.lineHeight) / 2
 
             if value == 0 {
                 iconView.frame = CGRect(x: (bounds.width - icon) / 2, y: iconY, width: icon, height: icon)
@@ -183,7 +180,7 @@ class CounterBadge: UIView {
                 iconView.frame = CGRect(x: originX, y: iconY, width: icon, height: icon)
                 numberHost.view.frame = CGRect(
                     x: originX + icon + Self.inlineGap, y: valueY,
-                    width: textW, height: Self.inlineValueLineHeight
+                    width: textW, height: style.lineHeight
                 )
             }
             minusGlyph.frame = .zero
@@ -195,12 +192,13 @@ class CounterBadge: UIView {
         let icon = Self.inputIconSize
         let glyph = Self.inputGlyphSize
         let gap = Self.inputGlyphSpacing
-        valueModel.fontSize = Self.inputValueFontSize
-        valueModel.lineHeight = Self.inputValueLineHeight
+        let style = Typography.badgeInputValue
+        valueModel.font = style.swiftUIFont
+        valueModel.lineHeight = style.lineHeight
 
         let iconY = (h - icon) / 2
         let glyphY = (h - glyph) / 2
-        let valueY = (h - Self.inputValueLineHeight) / 2
+        let valueY = (h - style.lineHeight) / 2
 
         if value == 0 {
             // [icon][gap][+]
@@ -221,7 +219,7 @@ class CounterBadge: UIView {
             iconView.frame = CGRect(x: x, y: iconY, width: icon, height: icon)
             x += icon + gap
             numberHost.view.frame = CGRect(
-                x: x, y: valueY, width: textW, height: Self.inputValueLineHeight
+                x: x, y: valueY, width: textW, height: style.lineHeight
             )
             x += textW + gap
             plusGlyph.frame = CGRect(x: x, y: glyphY, width: glyph, height: glyph)
@@ -233,15 +231,13 @@ class CounterBadge: UIView {
     }
 
     private func inlineNumeralWidth(value: Int) -> CGFloat {
-        let font = Karl.monospacedDigit(Karl.medium, size: Self.inlineValueFontSize)
         let s = "\(value)" as NSString
-        return ceil(s.size(withAttributes: [.font: font]).width)
+        return ceil(s.size(withAttributes: [.font: Typography.badgeInlineValue.uiFont]).width)
     }
 
     private func inputNumeralWidth(value: Int) -> CGFloat {
-        let font = Karl.monospacedDigit(Karl.medium, size: Self.inputValueFontSize)
         let s = "\(value)" as NSString
-        return ceil(s.size(withAttributes: [.font: font]).width)
+        return ceil(s.size(withAttributes: [.font: Typography.badgeInputValue.uiFont]).width)
     }
 
     private func applyDisplay() {
