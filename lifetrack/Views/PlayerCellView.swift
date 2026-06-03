@@ -1,4 +1,5 @@
 import UIKit
+import SwiftUI
 
 class PlayerCellView: UIView {
     static let contentInset: CGFloat = 12
@@ -34,7 +35,7 @@ class PlayerCellView: UIView {
             badgeBar.isHidden = isBeingEdited
             minusIcon.isHidden = isBeingEdited
             plusIcon.isHidden = isBeingEdited
-            deltaLabel.isHidden = isBeingEdited
+            deltaView.isHidden = isBeingEdited
             if isBeingEdited { cancelDeltaSession() }
         }
     }
@@ -44,7 +45,13 @@ class PlayerCellView: UIView {
     let badgeBar = PlayerCellBadgeBar()
     private let minusIcon = UIImageView()
     private let plusIcon = UIImageView()
-    private let deltaLabel = UILabel()
+    /// The net-change readout uses the same rolling `numericText` transition as
+    /// the badges (`RollingCounterText` driven by `CounterValueModel`), hosted in
+    /// UIKit. `deltaView` is the hosting controller's view; `deltaModel.value`
+    /// holds the current magnitude.
+    private let deltaModel = CounterValueModel()
+    private lazy var deltaHost = UIHostingController(rootView: RollingCounterText(model: deltaModel))
+    private var deltaView: UIView { deltaHost.view }
     private var sessionDelta = 0
     private var deltaIdleTimer: Timer?
 
@@ -81,12 +88,13 @@ class PlayerCellView: UIView {
         configureAdjustIcon(minusIcon, named: "IconMinus")
         configureAdjustIcon(plusIcon, named: "IconPlus")
 
-        deltaLabel.font = Typography.lifeDelta.uiFont
-        deltaLabel.textColor = .white
-        deltaLabel.textAlignment = .center
-        deltaLabel.alpha = 0
-        deltaLabel.isUserInteractionEnabled = false
-        contentContainer.addSubview(deltaLabel)
+        deltaModel.font = Typography.lifeDelta.swiftUIFont
+        deltaModel.lineHeight = Typography.lifeDelta.lineHeight
+        deltaModel.tintColor = .white
+        deltaView.backgroundColor = .clear
+        deltaView.isUserInteractionEnabled = false
+        deltaView.alpha = 0
+        contentContainer.addSubview(deltaView)
     }
 
     private func configureAdjustIcon(_ iconView: UIImageView, named: String) {
@@ -126,10 +134,10 @@ class PlayerCellView: UIView {
         let iconY = numRect.midY - iconSize / 2
 
         // The net-change readout reads as "<sign-icon><magnitude>": the sign is the
-        // existing ± icon, the label is just the digits next to it.
-        deltaLabel.sizeToFit()
-        let dW = deltaLabel.bounds.width
-        let dH = deltaLabel.bounds.height
+        // existing ± icon, the rolling label is just the digits next to it. Width
+        // is measured from the Karl font (the hosted SwiftUI text fills the frame).
+        let dH = Typography.lifeDelta.lineHeight
+        let dW = deltaMagnitudeWidth()
         let dGap = Self.deltaSpacing
         let labelY = numRect.midY - dH / 2
 
@@ -141,14 +149,14 @@ class PlayerCellView: UIView {
             // Negative: the digits go between the minus icon and the number, so the
             // minus icon slides left to open that room (animated by registerDelta).
             let labelX = numRect.minX - gap - dW
-            deltaLabel.frame = CGRect(x: labelX, y: labelY, width: dW, height: dH)
+            deltaView.frame = CGRect(x: labelX, y: labelY, width: dW, height: dH)
             minusIcon.frame = CGRect(x: labelX - dGap - iconSize, y: iconY,
                                      width: iconSize, height: iconSize)
         } else {
             minusIcon.frame = CGRect(x: numRect.minX - gap - iconSize, y: iconY,
                                      width: iconSize, height: iconSize)
-            deltaLabel.frame = CGRect(x: plusIcon.frame.maxX + dGap, y: labelY,
-                                      width: dW, height: dH)
+            deltaView.frame = CGRect(x: plusIcon.frame.maxX + dGap, y: labelY,
+                                     width: dW, height: dH)
         }
 
         contentContainer.transform = CGAffineTransform(rotationAngle: rotation * .pi / 180)
@@ -286,18 +294,27 @@ class PlayerCellView: UIView {
         // Net zero — nothing to show; fade the session out as if it had idled.
         guard sessionDelta != 0 else { endDeltaSession(); return }
 
-        deltaLabel.text = "\(abs(sessionDelta))"
+        // Drive the magnitude through the model so the digits roll (numericText).
+        deltaModel.value = abs(sessionDelta)
         let positive = sessionDelta > 0
         setNeedsLayout()
         UIView.animate(withDuration: 0.2, delay: 0,
                        usingSpringWithDamping: 0.85, initialSpringVelocity: 0,
                        options: .beginFromCurrentState) {
             self.layoutIfNeeded()
-            self.deltaLabel.alpha = 1
+            self.deltaView.alpha = 1
             self.plusIcon.alpha = positive ? 1 : Self.adjustIconAlpha
             self.minusIcon.alpha = positive ? Self.adjustIconAlpha : 1
         }
         scheduleDeltaIdle()
+    }
+
+    /// Width of the current magnitude, measured from the Karl `lifeDelta` font so
+    /// the hosted rolling text can be framed before it lays out. Zero when idle.
+    private func deltaMagnitudeWidth() -> CGFloat {
+        guard sessionDelta != 0 else { return 0 }
+        let s = "\(abs(sessionDelta))" as NSString
+        return ceil(s.size(withAttributes: [.font: Typography.lifeDelta.uiFont]).width)
     }
 
     private func scheduleDeltaIdle() {
@@ -314,13 +331,13 @@ class PlayerCellView: UIView {
     private func endDeltaSession() {
         deltaIdleTimer?.invalidate()
         deltaIdleTimer = nil
-        let frozen = deltaLabel.frame
+        let frozen = deltaView.frame
         sessionDelta = 0
         setNeedsLayout()
         UIView.animate(withDuration: 0.4, delay: 0, options: .beginFromCurrentState) {
-            self.layoutIfNeeded()           // minus icon glides back to resting
-            self.deltaLabel.frame = frozen  // …but the label stays put while fading
-            self.deltaLabel.alpha = 0
+            self.layoutIfNeeded()          // minus icon glides back to resting
+            self.deltaView.frame = frozen  // …but the readout stays put while fading
+            self.deltaView.alpha = 0
             self.minusIcon.alpha = Self.adjustIconAlpha
             self.plusIcon.alpha = Self.adjustIconAlpha
         }
@@ -331,7 +348,8 @@ class PlayerCellView: UIView {
         deltaIdleTimer?.invalidate()
         deltaIdleTimer = nil
         sessionDelta = 0
-        deltaLabel.alpha = 0
+        deltaModel.value = 0
+        deltaView.alpha = 0
         minusIcon.alpha = Self.adjustIconAlpha
         plusIcon.alpha = Self.adjustIconAlpha
         setNeedsLayout()
@@ -366,7 +384,7 @@ class PlayerCellView: UIView {
         minusIcon.alpha = Self.adjustIconAlpha * (1 - progress(for: minusIcon))
         plusIcon.alpha = Self.adjustIconAlpha * (1 - progress(for: plusIcon))
         if sessionDelta != 0 {
-            deltaLabel.alpha = 1 - progress(for: deltaLabel)
+            deltaView.alpha = 1 - progress(for: deltaView)
         }
     }
 

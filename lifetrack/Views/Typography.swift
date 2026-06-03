@@ -53,7 +53,8 @@ enum Typography {
     )
 
     /// Transient net-change readout next to a life total (e.g. "+5" / "−3").
+    /// Tabular figures so the rolling digits keep a stable width.
     static let lifeDelta = Style(
-        face: Karl.medium, size: 28, lineHeight: 32, monospacedDigits: false
+        face: Karl.medium, size: 28, lineHeight: 32, monospacedDigits: true
     )
 }
