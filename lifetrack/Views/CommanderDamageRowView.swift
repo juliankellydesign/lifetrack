@@ -9,7 +9,7 @@ class CommanderDamageRowView: UIView {
 
     /// Vertical fraction of available cell content height to allocate to this row.
     static let heightFraction: CGFloat = 0.13
-    static let minHeight: CGFloat = CounterBadge.inlineValueLineHeight
+    static let minHeight: CGFloat = Typography.badgeInlineValue.lineHeight
     static let maxHeight: CGFloat = 36
     private static let badgeSpacing: CGFloat = 12
 
