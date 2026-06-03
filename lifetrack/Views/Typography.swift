@@ -51,4 +51,9 @@ enum Typography {
     static let badgeInputValue = Style(
         face: Karl.medium, size: 28, lineHeight: 32, monospacedDigits: true
     )
+
+    /// Transient net-change readout next to a life total (e.g. "+5" / "−3").
+    static let lifeDelta = Style(
+        face: Karl.medium, size: 28, lineHeight: 32, monospacedDigits: false
+    )
 }

@@ -10,6 +10,15 @@ class PlayerCellView: UIView {
     private static let adjustIconSpacing: CGFloat = 20
     private static let adjustIconAlpha: CGFloat = 0.3
 
+    /// Transient net-change readout. Each tap (and ±10 hold tick) accumulates
+    /// into `sessionDelta`; the magnitude is shown next to the active side's ±
+    /// icon (the icon *is* the sign) and the whole session fades out after
+    /// `deltaIdleTimeout` of no further input. Net-signed, so +7 then −2 reads
+    /// as a "+5" next to the plus icon. `deltaSpacing` is the tight gap between
+    /// the sign icon and its digits.
+    private static let deltaIdleTimeout: TimeInterval = 1.4
+    private static let deltaSpacing: CGFloat = 8
+
     private(set) var lifeTotal: Int = Player.defaultLife
     var rotation: CGFloat = 0 {
         didSet { badgeBar.iconRotation = rotation }
@@ -25,6 +34,8 @@ class PlayerCellView: UIView {
             badgeBar.isHidden = isBeingEdited
             minusIcon.isHidden = isBeingEdited
             plusIcon.isHidden = isBeingEdited
+            deltaLabel.isHidden = isBeingEdited
+            if isBeingEdited { cancelDeltaSession() }
         }
     }
 
@@ -33,6 +44,9 @@ class PlayerCellView: UIView {
     let badgeBar = PlayerCellBadgeBar()
     private let minusIcon = UIImageView()
     private let plusIcon = UIImageView()
+    private let deltaLabel = UILabel()
+    private var sessionDelta = 0
+    private var deltaIdleTimer: Timer?
 
     private var changeDirection: ChangeDirection?
     private var repeatTimer: Timer?
@@ -68,6 +82,13 @@ class PlayerCellView: UIView {
         contentContainer.addSubview(badgeBar)
         configureAdjustIcon(minusIcon, named: "IconMinus")
         configureAdjustIcon(plusIcon, named: "IconPlus")
+
+        deltaLabel.font = Typography.lifeDelta.uiFont
+        deltaLabel.textColor = .white
+        deltaLabel.textAlignment = .center
+        deltaLabel.alpha = 0
+        deltaLabel.isUserInteractionEnabled = false
+        contentContainer.addSubview(deltaLabel)
     }
 
     private func configureAdjustIcon(_ iconView: UIImageView, named: String) {
@@ -105,10 +126,32 @@ class PlayerCellView: UIView {
         let iconSize = Self.adjustIconSize
         let gap = Self.adjustIconSpacing
         let iconY = numRect.midY - iconSize / 2
-        minusIcon.frame = CGRect(x: numRect.minX - gap - iconSize, y: iconY,
-                                 width: iconSize, height: iconSize)
+
+        // The net-change readout reads as "<sign-icon><magnitude>": the sign is the
+        // existing ± icon, the label is just the digits next to it.
+        deltaLabel.sizeToFit()
+        let dW = deltaLabel.bounds.width
+        let dH = deltaLabel.bounds.height
+        let dGap = Self.deltaSpacing
+        let labelY = numRect.midY - dH / 2
+
+        // Plus icon never moves — a positive readout slots in outboard (to its right).
         plusIcon.frame = CGRect(x: numRect.maxX + gap, y: iconY,
                                 width: iconSize, height: iconSize)
+
+        if sessionDelta < 0 {
+            // Negative: the digits go between the minus icon and the number, so the
+            // minus icon slides left to open that room (animated by registerDelta).
+            let labelX = numRect.minX - gap - dW
+            deltaLabel.frame = CGRect(x: labelX, y: labelY, width: dW, height: dH)
+            minusIcon.frame = CGRect(x: labelX - dGap - iconSize, y: iconY,
+                                     width: iconSize, height: iconSize)
+        } else {
+            minusIcon.frame = CGRect(x: numRect.minX - gap - iconSize, y: iconY,
+                                     width: iconSize, height: iconSize)
+            deltaLabel.frame = CGRect(x: plusIcon.frame.maxX + dGap, y: labelY,
+                                      width: dW, height: dH)
+        }
 
         contentContainer.transform = CGAffineTransform(rotationAngle: rotation * .pi / 180)
     }
@@ -242,7 +285,69 @@ class PlayerCellView: UIView {
         // so fast tapping keeps up. Bulk ±10 repeats keep the staggered roll.
         dotNumberView.updateNumber(lifeTotal, direction: changeDirection,
                                    animated: true, interruptible: !bulk)
+        registerDelta(increment ? magnitude : -magnitude)
         onLifeChanged?(lifeTotal)
+    }
+
+    // MARK: - Net-change readout
+
+    /// Accumulate a life change into the running session delta, surface the
+    /// magnitude next to the active side's icon, brighten that icon, and (re)arm
+    /// the idle fade. The minus icon slides over (animated) to make room.
+    private func registerDelta(_ amount: Int) {
+        sessionDelta += amount
+        // Net zero — nothing to show; fade the session out as if it had idled.
+        guard sessionDelta != 0 else { endDeltaSession(); return }
+
+        deltaLabel.text = "\(abs(sessionDelta))"
+        let positive = sessionDelta > 0
+        setNeedsLayout()
+        UIView.animate(withDuration: 0.2, delay: 0,
+                       usingSpringWithDamping: 0.85, initialSpringVelocity: 0,
+                       options: .beginFromCurrentState) {
+            self.layoutIfNeeded()
+            self.deltaLabel.alpha = 1
+            self.plusIcon.alpha = positive ? 1 : Self.adjustIconAlpha
+            self.minusIcon.alpha = positive ? Self.adjustIconAlpha : 1
+        }
+        scheduleDeltaIdle()
+    }
+
+    private func scheduleDeltaIdle() {
+        deltaIdleTimer?.invalidate()
+        deltaIdleTimer = Timer.scheduledTimer(withTimeInterval: Self.deltaIdleTimeout,
+                                              repeats: false) { [weak self] _ in
+            self?.endDeltaSession()
+        }
+    }
+
+    /// Fade the readout away, glide the minus icon back to its resting slot, and
+    /// settle both icons to their dim alpha. The label fades in place (its frame
+    /// is frozen) so it doesn't jump sides as the accumulator clears to zero.
+    private func endDeltaSession() {
+        deltaIdleTimer?.invalidate()
+        deltaIdleTimer = nil
+        let frozen = deltaLabel.frame
+        sessionDelta = 0
+        setNeedsLayout()
+        UIView.animate(withDuration: 0.4, delay: 0, options: .beginFromCurrentState) {
+            self.layoutIfNeeded()           // minus icon glides back to resting
+            self.deltaLabel.frame = frozen  // …but the label stays put while fading
+            self.deltaLabel.alpha = 0
+            self.minusIcon.alpha = Self.adjustIconAlpha
+            self.plusIcon.alpha = Self.adjustIconAlpha
+        }
+    }
+
+    /// Tear down the session immediately (no animation) — for edit/reset.
+    private func cancelDeltaSession() {
+        deltaIdleTimer?.invalidate()
+        deltaIdleTimer = nil
+        sessionDelta = 0
+        deltaLabel.alpha = 0
+        minusIcon.alpha = Self.adjustIconAlpha
+        plusIcon.alpha = Self.adjustIconAlpha
+        setNeedsLayout()
     }
 
     // MARK: - Swipe-to-reset sweep
@@ -273,6 +378,9 @@ class PlayerCellView: UIView {
         badgeBar.alpha = 1 - progress(for: badgeBar)
         minusIcon.alpha = Self.adjustIconAlpha * (1 - progress(for: minusIcon))
         plusIcon.alpha = Self.adjustIconAlpha * (1 - progress(for: plusIcon))
+        if sessionDelta != 0 {
+            deltaLabel.alpha = 1 - progress(for: deltaLabel)
+        }
     }
 
     func resetSweep(animated: Bool) {
@@ -296,6 +404,7 @@ class PlayerCellView: UIView {
     /// `resetSweep(animated: true)` to play the roll-in.
     func snapToOff() {
         dotNumberView.snapToOff()
+        cancelDeltaSession()
         badgeBar.alpha = 0
         minusIcon.alpha = 0
         plusIcon.alpha = 0
