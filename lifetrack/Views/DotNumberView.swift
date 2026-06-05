@@ -15,6 +15,9 @@ class DotNumberView: UIView {
     private var lastLayoutSize: CGSize = .zero
     private var lastMaxDotSize: CGFloat?
     private var lastFontID: String?
+    /// Font id the current `digitViews` were built against, so `updateNumber`
+    /// can detect a font change and rebuild at the new glyph dimensions.
+    private var builtFontID: String?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -58,7 +61,11 @@ class DotNumberView: UIView {
 
         guard bounds.width > 0 && bounds.height > 0 else { return }
 
-        if oldDigits.count != newDigits.count || digitViews.isEmpty {
+        // Rebuild when the digit count changes, when there are no views yet, or
+        // when the dot font itself changed — the new font has different
+        // dimensions, so the old digit views (and their dot counts) are stale.
+        if oldDigits.count != newDigits.count || digitViews.isEmpty
+            || builtFontID != DotFontSettings.current.id {
             buildDigitViews(for: newDigits)
         }
         applyDigits(newDigits, direction: direction, animated: animated)
@@ -83,6 +90,7 @@ class DotNumberView: UIView {
     private func buildDigitViews(for digits: [Int]) {
         digitViews.forEach { $0.removeFromSuperview() }
         digitViews.removeAll()
+        builtFontID = DotFontSettings.current.id
 
         let dotSz = computeDotSize(digitCount: digits.count)
         let spc = dotSz * Self.spacingRatio
