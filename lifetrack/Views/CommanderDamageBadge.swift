@@ -17,6 +17,13 @@ class CommanderDamageBadge: CounterBadge {
         self.layoutIcon = icon
         super.init(iconView: icon)
         dimsIconWhenInactive = false
+        // Commander damage is always shown — a dim `+` marks an opponent who
+        // hasn't dealt any yet, so the seat slot never disappears.
+        showsInlinePlusWhenZero = true
+        // Tappable straight from the player cell (no overlay needed): each tap
+        // bumps the damage up. The ± editor in the life-input overlay takes over
+        // when `showsAdjustControls` is set there.
+        inlineTapIncrements = true
     }
 
     var boardRotation: CGFloat {

@@ -2,7 +2,17 @@ import UIKit
 import SwiftUI
 
 class PlayerCellView: UIView {
+    /// Horizontal content margin (left/right in the player's reading frame).
     static let contentInset: CGFloat = 12
+    /// Top/bottom content margin in the player's reading frame.
+    static let verticalInset: CGFloat = 8
+    /// Fixed height of the commander-damage band (and its tap boxes), pinned to
+    /// the player's near edge just inside the bottom margin. The dot number area
+    /// flexes to fill whatever height remains above it.
+    static let commanderBandHeight: CGFloat = 44
+    /// Width of the center "tap to edit" zone, centered on the number: 5 dots on
+    /// the 20pt grid (18pt dot + padding). The ± zones fill the rest of the cell.
+    static let editZoneWidth: CGFloat = 100
 
     /// ± adjust-direction icons flanking the life total (minus on the player's
     /// left, plus on the right). Part of the 4pt grid / units-of-20 system:
@@ -29,6 +39,8 @@ class PlayerCellView: UIView {
     }
     var onEditRequested: (() -> Void)?
     var onLifeChanged: ((Int) -> Void)?
+    /// A commander-damage badge was tapped in this cell (always +1 per tap).
+    var onCommanderDamageAdjust: ((_ opponentId: Int, _ delta: Int) -> Void)?
     var isBeingEdited: Bool = false {
         didSet {
             dotNumberView.isHidden = isBeingEdited
@@ -85,6 +97,9 @@ class PlayerCellView: UIView {
         addSubview(contentContainer)
         contentContainer.addSubview(dotNumberView)
         contentContainer.addSubview(badgeBar)
+        badgeBar.onAdjustDamage = { [weak self] opponentId, delta in
+            self?.onCommanderDamageAdjust?(opponentId, delta)
+        }
         configureAdjustIcon(minusIcon, named: "IconMinus")
         configureAdjustIcon(plusIcon, named: "IconPlus")
 
@@ -109,16 +124,19 @@ class PlayerCellView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
 
-        let inset = PlayerCellView.contentInset
+        // Player's reading frame: horizontal extent uses the 12pt side margin,
+        // vertical extent the 8pt top/bottom margin.
         let swapped = abs(Int(rotation)) == 90
-        let contentW = (swapped ? bounds.height : bounds.width) - inset * 2
-        let contentH = (swapped ? bounds.width : bounds.height) - inset * 2
+        let contentW = (swapped ? bounds.height : bounds.width) - Self.contentInset * 2
+        let contentH = (swapped ? bounds.width : bounds.height) - Self.verticalInset * 2
 
         contentContainer.transform = .identity
         contentContainer.bounds = CGRect(x: 0, y: 0, width: contentW, height: contentH)
         contentContainer.center = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
 
-        let badgeRowH = Self.badgeRowHeight(forContentHeight: contentH)
+        // 44pt commander band pinned to the bottom (near edge); the dot number
+        // area flexes to fill the rest above it.
+        let badgeRowH = min(Self.commanderBandHeight, contentH)
         let dotH = contentH - badgeRowH
 
         dotNumberView.frame = CGRect(x: 0, y: 0, width: contentW, height: dotH)
@@ -162,12 +180,12 @@ class PlayerCellView: UIView {
         contentContainer.transform = CGAffineTransform(rotationAngle: rotation * .pi / 180)
     }
 
-    /// Height of the combined badge row (commander damage + counters) below the
-    /// life total. Exposed statically so GameBoardView can subtract it when
-    /// computing dot sizes.
+    /// Height reserved for the commander-damage band below the life total, given
+    /// the content height. Fixed at `commanderBandHeight` (clamped so it never
+    /// exceeds the content). Exposed statically so GameBoardView can subtract it
+    /// when computing dot sizes.
     static func badgeRowHeight(forContentHeight contentH: CGFloat) -> CGFloat {
-        let h = contentH * CommanderDamageRowView.heightFraction
-        return min(max(h, CommanderDamageRowView.minHeight), CommanderDamageRowView.maxHeight)
+        min(commanderBandHeight, contentH)
     }
 
     func setLifeTotal(_ value: Int, direction: ChangeDirection?, animated: Bool) {
@@ -192,7 +210,45 @@ class PlayerCellView: UIView {
         )
     }
 
+    /// Push a new value into one commander-damage badge (animated) after an
+    /// inline tap, without rebuilding the whole badge bar.
+    func setCommanderDamage(_ value: Int, forOpponent opponentId: Int) {
+        badgeBar.setDamage(value, forOpponent: opponentId)
+    }
+
+    /// Hit-target rects of the tappable commander-damage badges, in `view`'s
+    /// coordinate space — the tiled band columns from `PlayerCellBadgeBar`, so the
+    /// grid skeleton outlines exactly what's tappable. The `convert` walks the
+    /// rotated content container, so these come back oriented to the board.
+    func commanderHitRects(in view: UIView) -> [CGRect] {
+        layoutIfNeeded()
+        return badgeBar.commanderTapRects().map { badgeBar.convert($0, to: view) }
+    }
+
+    /// The life-tap region (the dot number area, above the badge band) in `view`'s
+    /// coordinate space. The grid skeleton splits this into thirds so the life
+    /// tap zones don't bleed into the commander-badge band below.
+    func numberAreaRect(in view: UIView) -> CGRect {
+        layoutIfNeeded()
+        return dotNumberView.convert(dotNumberView.bounds, to: view)
+    }
+
     // MARK: - Touch handling
+
+    /// The badge bar lives inside the rotated (and non-interactive)
+    /// `contentContainer`, so normal hit-testing never reaches the commander
+    /// badges. Route taps that fall in the badge band straight to the badge whose
+    /// tiled column they hit (so a tap bumps commander damage); everything above
+    /// the band falls through to the cell's own life-tap handling.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if !isBeingEdited {
+            let barPoint = badgeBar.convert(point, from: self)
+            if let badge = badgeBar.commanderBadge(atBarPoint: barPoint) {
+                return badge
+            }
+        }
+        return super.hitTest(point, with: event)
+    }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard !isTouching, let touch = touches.first else { return }
@@ -264,11 +320,16 @@ class PlayerCellView: UIView {
         }
     }
 
+    /// The center (edit) zone is a fixed `editZoneWidth`-wide band centered on the
+    /// number; the ± zones stretch to fill the rest of the cell on each side.
     private func tapZone(at location: CGPoint) -> TapZone {
-        let f = playerFraction(at: location)
-        if f < 1.0 / 3.0 { return .left }
-        if f > 2.0 / 3.0 { return .right }
-        return .center
+        let swapped = abs(Int(rotation)) == 90
+        let axisPos = swapped ? location.y : location.x
+        let axisLen = swapped ? bounds.height : bounds.width
+        let half = min(Self.editZoneWidth, axisLen) / 2
+        if abs(axisPos - axisLen / 2) <= half { return .center }
+        // Outside the center band, player orientation decides which side is ±.
+        return playerFraction(at: location) < 0.5 ? .left : .right
     }
 
     private func applyChange(increment: Bool, magnitude: Int, bulk: Bool) {

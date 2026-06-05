@@ -6,6 +6,11 @@ class DotDigitView: UIView {
 
     private static let animationDuration: TimeInterval = 0.3
 
+    /// Dot corner radius as a fraction of dot size, so roundness stays constant
+    /// as dots scale (board at 18pt vs. the larger life-input overlay dots).
+    /// Tuned to match the original 8pt radius at the 18pt board dot size.
+    private static let cornerRadiusRatio: CGFloat = 8.0 / 18.0
+
     func configure(dotSize: CGFloat, spacing: CGFloat) {
         dotViews.forEach { $0.removeFromSuperview() }
         dotViews.removeAll()
@@ -23,7 +28,7 @@ class DotDigitView: UIView {
                 height: dotSize
             ))
             dot.backgroundColor = .white
-            dot.layer.cornerRadius = 8
+            dot.layer.cornerRadius = dotSize * Self.cornerRadiusRatio
             dot.layer.cornerCurve = .continuous
             dot.transform = CGAffineTransform(scaleX: 0.01, y: 0.01)
             dot.alpha = 0
