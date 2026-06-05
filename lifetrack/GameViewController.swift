@@ -39,6 +39,24 @@ class GameViewController: UIViewController {
         gameBoardView.onLifeChanged = { [weak self] index, newLife in
             self?.players[index].lifeTotal = newLife
         }
+        gameBoardView.onCommanderDamageChanged = { [weak self] index, opponentId, delta in
+            guard let self else { return }
+            let current = self.players[index].commanderDamage[opponentId] ?? 0
+            let next = max(0, current + delta)
+            let applied = next - current
+            guard applied != 0 else { return }
+            self.players[index].commanderDamage[opponentId] = next
+            self.gameBoardView.setCommanderDamage(cellIndex: index, opponentId: opponentId, value: next)
+            // Commander damage is combat damage — knock the same amount off the
+            // recipient's life total (and roll the dots in that direction).
+            self.players[index].lifeTotal -= applied
+            self.gameBoardView.updatePlayer(
+                at: index,
+                lifeTotal: self.players[index].lifeTotal,
+                direction: applied > 0 ? .decreasing : .increasing,
+                animated: true
+            )
+        }
         gameBoardView.onResetRequested = { [weak self] in
             self?.handleSwipeReset()
         }

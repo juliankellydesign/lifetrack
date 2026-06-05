@@ -32,17 +32,19 @@ class CounterBadge: UIView {
     private let iconView: UIView
     let valueModel = CounterValueModel()
     private let numberHost: UIHostingController<RollingCounterText>
-    private let plusGlyph = UIImageView(image: UIImage(named: "icon-plus")?.withRenderingMode(.alwaysTemplate))
-    private let minusGlyph = UIImageView(image: UIImage(named: "icon-minus")?.withRenderingMode(.alwaysTemplate))
+    private let plusGlyph = UIImageView(image: UIImage(named: "IconPlus")?.withRenderingMode(.alwaysTemplate))
+    private let minusGlyph = UIImageView(image: UIImage(named: "IconMinus")?.withRenderingMode(.alwaysTemplate))
 
     private(set) var value: Int = 0
 
     var onAdjust: ((Int) -> Void)?
 
-    /// When false, the badge is read-only (no glyphs, no touch). Used in player cells.
+    /// When false, the badge is read-only (no ± glyphs, no pill). Used in player
+    /// cells. Note: a read-only badge can still be tappable — see
+    /// `inlineTapIncrements`, which keeps it interactive without the ± editor.
     var showsAdjustControls: Bool = false {
         didSet {
-            isUserInteractionEnabled = showsAdjustControls
+            updateInteraction()
             backgroundColor = showsAdjustControls
                 ? UIColor.white.withAlphaComponent(Self.inputPillFillAlpha)
                 : .clear
@@ -51,11 +53,36 @@ class CounterBadge: UIView {
         }
     }
 
+    /// When true (and not in `showsAdjustControls` mode), the read-only inline
+    /// badge is tappable and **every tap increments by +1**. Used for commander
+    /// damage in the player cell, where there's no room for a ± editor but a quick
+    /// bump up is wanted. Hold-to-repeat ramps it like the editor. The actual hit
+    /// area is the tiled band column defined by `PlayerCellBadgeBar` and routed by
+    /// `PlayerCellView.hitTest`, so it tiles with no gaps/overlap.
+    var inlineTapIncrements: Bool = false {
+        didSet { updateInteraction() }
+    }
+
+    private func updateInteraction() {
+        isUserInteractionEnabled = showsAdjustControls || inlineTapIncrements
+    }
+
     /// In interactive mode, dim the icon when the value is zero. Subclasses can
     /// disable this when zero is a meaningful resting state (e.g. a fresh
     /// commander damage badge for an opponent).
     var dimsIconWhenInactive: Bool = true {
         didSet { applyDisplay() }
+    }
+
+    /// When true, the read-only inline badge stays visible at zero, rendering
+    /// `[icon][+]` (a dim plus) instead of collapsing to no width. Used by
+    /// commander-damage badges so every opponent's slot is always on screen.
+    /// Counter badges leave this false and hide when empty.
+    var showsInlinePlusWhenZero: Bool = false {
+        didSet {
+            applyDisplay()
+            setNeedsLayout()
+        }
     }
 
     /// Fixed sizes used when `showsAdjustControls` is true (life input view).
@@ -68,6 +95,8 @@ class CounterBadge: UIView {
 
     /// Fixed sizes used when `showsAdjustControls` is false (player cell badge bar).
     static let inlineIconSize: CGFloat = 24
+    /// Size of the zero-state `+` glyph in read-only badges (see `showsInlinePlusWhenZero`).
+    static let inlinePlusSize: CGFloat = 18
     private static let inlineGap: CGFloat = 4
     private static let dimmedAlpha: CGFloat = 0.2
     private static let longPressDelay: TimeInterval = 0.35
@@ -136,7 +165,10 @@ class CounterBadge: UIView {
 
     func intrinsicWidth(forHeight h: CGFloat) -> CGFloat {
         if !showsAdjustControls {
-            if value == 0 { return 0 }
+            if value == 0 {
+                guard showsInlinePlusWhenZero else { return 0 }
+                return Self.inlineIconSize + Self.inlineGap + Self.inlinePlusSize
+            }
             return Self.inlineIconSize + Self.inlineGap + inlineNumeralWidth(value: value)
         }
         let icon = Self.inputIconSize
@@ -173,8 +205,22 @@ class CounterBadge: UIView {
             let iconY = (h - icon) / 2
             let valueY = (h - style.lineHeight) / 2
 
+            minusGlyph.frame = .zero
+            plusGlyph.frame = .zero
             if value == 0 {
-                iconView.frame = CGRect(x: (bounds.width - icon) / 2, y: iconY, width: icon, height: icon)
+                if showsInlinePlusWhenZero {
+                    // [icon][gap][+] — keeps the slot visible before any damage.
+                    let plus = Self.inlinePlusSize
+                    let totalW = icon + Self.inlineGap + plus
+                    let originX = (bounds.width - totalW) / 2
+                    iconView.frame = CGRect(x: originX, y: iconY, width: icon, height: icon)
+                    plusGlyph.frame = CGRect(
+                        x: originX + icon + Self.inlineGap, y: (h - plus) / 2,
+                        width: plus, height: plus
+                    )
+                } else {
+                    iconView.frame = CGRect(x: (bounds.width - icon) / 2, y: iconY, width: icon, height: icon)
+                }
                 numberHost.view.frame = .zero
             } else {
                 let textW = inlineNumeralWidth(value: value)
@@ -186,8 +232,6 @@ class CounterBadge: UIView {
                     width: textW, height: style.lineHeight
                 )
             }
-            minusGlyph.frame = .zero
-            plusGlyph.frame = .zero
             return
         }
 
@@ -230,6 +274,9 @@ class CounterBadge: UIView {
     }
 
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        // In the player cell, commander-badge hit areas are the tiled columns
+        // defined by `PlayerCellBadgeBar` (routed via the cell's `hitTest`), not
+        // this view's bounds. This inset only matters for the ± editor overlay.
         bounds.inset(by: Self.hitInsets).contains(point)
     }
 
@@ -247,16 +294,21 @@ class CounterBadge: UIView {
         valueModel.value = value
 
         let active = value > 0
-        // Read-only badges fully hide when zero; interactive badges dim to indicate empty.
+        // Read-only badges hide when zero, unless they keep their slot visible
+        // (commander damage) — then the seat icon stays lit at full opacity.
         let inactiveIconAlpha: CGFloat = showsAdjustControls
             ? (dimsIconWhenInactive ? Self.dimmedAlpha : 1.0)
-            : 0
+            : (showsInlinePlusWhenZero ? 1.0 : 0)
         iconView.alpha = active ? 1.0 : inactiveIconAlpha
         numberHost.view.alpha = active ? 1 : 0
         minusGlyph.alpha = (showsAdjustControls && active) ? 1 : 0
-        plusGlyph.alpha = showsAdjustControls
-            ? (active ? 1.0 : Self.dimmedAlpha)
-            : 0
+        // Interactive badges always show the +; read-only badges show it only as
+        // the dim zero-state placeholder when the slot stays visible.
+        if showsAdjustControls {
+            plusGlyph.alpha = active ? 1.0 : Self.dimmedAlpha
+        } else {
+            plusGlyph.alpha = (!active && showsInlinePlusWhenZero) ? Self.dimmedAlpha : 0
+        }
     }
 
     // MARK: - Touch handling
@@ -265,8 +317,11 @@ class CounterBadge: UIView {
         guard !isTouching, let touch = touches.first else { return }
         isTouching = true
         let loc = touch.location(in: self)
-        // When zero, every tap increments. Otherwise, left half decrements.
-        if value == 0 {
+        // Inline tap-to-increment (player cell) always goes up. In the ± editor,
+        // a zero badge increments on any tap; otherwise the left half decrements.
+        if !showsAdjustControls {
+            activeDelta = +1
+        } else if value == 0 {
             activeDelta = +1
         } else {
             activeDelta = loc.x < bounds.midX ? -1 : +1

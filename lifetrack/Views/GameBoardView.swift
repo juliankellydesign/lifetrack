@@ -4,11 +4,13 @@ class GameBoardView: UIView {
     private var cellViews: [PlayerCellView] = []
     var onEditRequested: ((Int, CGFloat) -> Void)?
     var onLifeChanged: ((Int, Int) -> Void)?
+    /// Fires when a commander-damage badge is tapped in a cell (always +1). Args:
+    /// cell index, the opponent's id, and the delta.
+    var onCommanderDamageChanged: ((Int, Int, Int) -> Void)?
     /// Fires when a swipe-to-reset gesture is committed. The caller is expected to
     /// rebuild player state; the wipe-in animation is driven by `playWipeIn()`.
     var onResetRequested: (() -> Void)?
 
-    private static let contentInset: CGFloat = PlayerCellView.contentInset
     private static let gap: CGFloat = BoardInsets.interCellGap
 
     /// Target dot diameter for the on-board life totals. Cells render at this
@@ -120,6 +122,9 @@ class GameBoardView: UIView {
             cell.onLifeChanged = { [weak self] newLife in
                 self?.onLifeChanged?(idx, newLife)
             }
+            cell.onCommanderDamageAdjust = { [weak self] opponentId, delta in
+                self?.onCommanderDamageChanged?(idx, opponentId, delta)
+            }
             addSubview(cell)
             cellViews.append(cell)
         }
@@ -145,6 +150,12 @@ class GameBoardView: UIView {
     func updatePlayer(at index: Int, lifeTotal: Int, direction: ChangeDirection? = nil, animated: Bool = false) {
         guard index < cellViews.count else { return }
         cellViews[index].setLifeTotal(lifeTotal, direction: direction, animated: animated)
+    }
+
+    /// Targeted, animated update of one commander-damage badge after an inline tap.
+    func setCommanderDamage(cellIndex: Int, opponentId: Int, value: Int) {
+        guard cellIndex < cellViews.count else { return }
+        cellViews[cellIndex].setCommanderDamage(value, forOpponent: opponentId)
     }
 
     func setEditing(index: Int?) {
@@ -212,23 +223,32 @@ class GameBoardView: UIView {
         }
         skeletonShape.path = path.cgPath
 
-        // Tap thirds: draw the two dividers along the player's left→right axis.
-        // 0°/180° seats split horizontally (vertical lines); ±90° split
-        // vertically (horizontal lines) so each region matches `tapZone(at:)`.
+        // Tap targets tile each cell with no gaps/overlap: the life zones fill the
+        // dot-number area (outlined), and the commander-damage badges fill the
+        // band below it as contiguous columns. The center "edit" zone is a fixed
+        // `editZoneWidth` band centered on the number; the ± zones fill the rest.
+        // Split along the player's left→right axis — 0°/180° split horizontally
+        // (vertical dividers); ±90° split vertically — matching `tapZone`.
         let tapPath = UIBezierPath()
-        for slot in slots {
-            let f = slot.frame
+        let editHalf = PlayerCellView.editZoneWidth / 2
+        for (i, slot) in slots.enumerated() where i < cellViews.count {
+            let cell = cellViews[i]
+            let numRect = cell.numberAreaRect(in: self)
+            tapPath.append(UIBezierPath(rect: numRect))
             let axisIsHorizontal = abs(Int(slot.rotationDegrees)) != 90
-            for t in [1.0 / 3.0, 2.0 / 3.0] {
+            for s in [-editHalf, editHalf] {
                 if axisIsHorizontal {
-                    let x = f.minX + f.width * t
-                    tapPath.move(to: CGPoint(x: x, y: f.minY))
-                    tapPath.addLine(to: CGPoint(x: x, y: f.maxY))
+                    let x = numRect.midX + s
+                    tapPath.move(to: CGPoint(x: x, y: numRect.minY))
+                    tapPath.addLine(to: CGPoint(x: x, y: numRect.maxY))
                 } else {
-                    let y = f.minY + f.height * t
-                    tapPath.move(to: CGPoint(x: f.minX, y: y))
-                    tapPath.addLine(to: CGPoint(x: f.maxX, y: y))
+                    let y = numRect.midY + s
+                    tapPath.move(to: CGPoint(x: numRect.minX, y: y))
+                    tapPath.addLine(to: CGPoint(x: numRect.maxX, y: y))
                 }
+            }
+            for rect in cell.commanderHitRects(in: self) {
+                tapPath.append(UIBezierPath(rect: rect))
             }
         }
         tapZoneShape.path = tapPath.cgPath
@@ -237,8 +257,8 @@ class GameBoardView: UIView {
     private static func uniformDotSize(for slots: [Slot]) -> CGFloat {
         slots.map { slot in
             let swapped = abs(Int(slot.rotationDegrees)) == 90
-            let contentW = (swapped ? slot.frame.height : slot.frame.width) - contentInset * 2
-            let contentH = (swapped ? slot.frame.width : slot.frame.height) - contentInset * 2
+            let contentW = (swapped ? slot.frame.height : slot.frame.width) - PlayerCellView.contentInset * 2
+            let contentH = (swapped ? slot.frame.width : slot.frame.height) - PlayerCellView.verticalInset * 2
             let dotH = contentH - PlayerCellView.badgeRowHeight(forContentHeight: contentH)
             return DotNumberView.dotSize(fitting: CGSize(width: contentW, height: dotH))
         }.min() ?? 0
