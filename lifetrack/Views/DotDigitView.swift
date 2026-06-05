@@ -23,7 +23,8 @@ class DotDigitView: UIView {
                 height: dotSize
             ))
             dot.backgroundColor = .white
-            dot.layer.cornerRadius = dotSize / 2
+            dot.layer.cornerRadius = 8
+            dot.layer.cornerCurve = .continuous
             dot.transform = CGAffineTransform(scaleX: 0.01, y: 0.01)
             dot.alpha = 0
             addSubview(dot)
@@ -41,6 +42,9 @@ class DotDigitView: UIView {
     /// the roll alive without trailing behind.
     func setDigit(_ digit: Int, direction: ChangeDirection?, animated: Bool) {
         let pattern = DotPatterns.pattern(for: digit)
+        // If the font changed since `configure`, our dot views are stale (wrong
+        // count). Bail — a relayout will rebuild and repaint at the new size.
+        guard pattern.count == dotViews.count else { return }
         let oldPattern: [Bool]? = currentDigit.map { DotPatterns.pattern(for: $0) }
         currentDigit = digit
 
@@ -92,6 +96,7 @@ class DotDigitView: UIView {
     ) {
         guard let digit = currentDigit else { return }
         let pattern = DotPatterns.pattern(for: digit)
+        guard pattern.count == dotViews.count else { return }
         for (i, dot) in dotViews.enumerated() {
             let p = reference.convert(
                 CGPoint(x: dot.bounds.midX, y: dot.bounds.midY),
@@ -124,6 +129,7 @@ class DotDigitView: UIView {
     func resetSweep(animated: Bool) {
         guard let digit = currentDigit else { return }
         let pattern = DotPatterns.pattern(for: digit)
+        guard pattern.count == dotViews.count else { return }
         for (i, dot) in dotViews.enumerated() {
             let active = pattern[i]
             let scale: CGAffineTransform = active ? .identity : CGAffineTransform(scaleX: 0.01, y: 0.01)

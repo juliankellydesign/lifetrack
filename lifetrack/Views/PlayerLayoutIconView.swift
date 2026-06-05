@@ -15,9 +15,21 @@ class PlayerLayoutIconView: UIView {
     /// "grayed out" convention.
     private static let dimAlpha: CGFloat = 0.2
 
-    /// SVG dots have radius 3 in a 32-unit viewbox. Keeping that ratio in sync
-    /// makes the inline icon match the SVGs in the source folder pixel-for-pixel.
-    private static let dotRadiusInViewbox: CGFloat = 3
+    /// Fixed dot diameter, identical in every host (player-cell badge and
+    /// life-input badge) so the indicator never changes size with the icon
+    /// frame. A 2×2 seat cluster therefore spans 9 + 2 + 9 = 20pt.
+    private static let dotDiameter: CGFloat = 9
+    /// Gap between adjacent dots in a regular grid.
+    private static let dotGap: CGFloat = 2
+    /// Center-to-center spacing of seats in the source SVG viewbox — the seats
+    /// sit on a 9-unit grid. Scaling that pitch up to `dotDiameter + dotGap`
+    /// (11pt) is what fixes the dot size while keeping seats in their relative
+    /// positions.
+    private static let svgGridPitch: CGFloat = 9
+
+    /// Selector mode (no highlight) scales the whole diagram to fill its large
+    /// button, drawing dots at this viewbox radius to match the source SVG art.
+    private static let selectorDotRadiusInViewbox: CGFloat = 3
 
     let layout: PlayerLayout
 
@@ -58,18 +70,34 @@ class PlayerLayoutIconView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         let viewbox = PlayerLayout.iconViewbox
-        let side = min(bounds.width, bounds.height)
-        let scale = side / viewbox
-        let offsetX = (bounds.width - side) / 2
-        let offsetY = (bounds.height - side) / 2
 
-        let dotDiameter = Self.dotRadiusInViewbox * 2 * scale
+        // Two render modes share this view:
+        //   • Commander-damage badge (a seat is highlighted): dots render at a
+        //     fixed diameter + gap, independent of the icon's frame, so the
+        //     indicator is identical in the player cell (24pt icon) and the
+        //     life-input overlay (32pt icon). Scale maps the 9-unit SVG seat
+        //     pitch to an 11pt screen pitch (9pt dot + 2pt gap), so a 2×2
+        //     cluster spans exactly 9 + 2 + 9 = 20pt.
+        //   • Layout selector (no highlight): scale the whole diagram to fill
+        //     its much larger button, drawing dots at the SVG art radius.
+        let isBadge = highlightedSeatIndex != nil
+        let scale: CGFloat = isBadge
+            ? (Self.dotDiameter + Self.dotGap) / Self.svgGridPitch
+            : min(bounds.width, bounds.height) / viewbox
+        let dotDiameter = isBadge
+            ? Self.dotDiameter
+            : Self.selectorDotRadiusInViewbox * 2 * scale
+
+        // Pivot the field on the viewbox center (the table center) so the
+        // counter-rotation keeps the highlighted dot pointing at the real seat.
+        let offsetX = bounds.midX - (viewbox / 2) * scale
+        let offsetY = bounds.midY - (viewbox / 2) * scale
 
         for (i, seat) in layout.seats.enumerated() where i < dotViews.count {
             let dot = dotViews[i]
             dot.frame = CGRect(
-                x: offsetX + (seat.iconCenter.x - Self.dotRadiusInViewbox) * scale,
-                y: offsetY + (seat.iconCenter.y - Self.dotRadiusInViewbox) * scale,
+                x: offsetX + seat.iconCenter.x * scale - dotDiameter / 2,
+                y: offsetY + seat.iconCenter.y * scale - dotDiameter / 2,
                 width: dotDiameter, height: dotDiameter
             )
             dot.layer.cornerRadius = dotDiameter / 2

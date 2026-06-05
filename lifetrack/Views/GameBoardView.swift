@@ -54,13 +54,26 @@ class GameBoardView: UIView {
         super.init(frame: frame)
         setupResetGesture()
         setupSkeleton()
+        observeFontChanges()
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         setupResetGesture()
         setupSkeleton()
+        observeFontChanges()
     }
+
+    /// A dot-font swap changes the glyph dimensions, so the board has to
+    /// recompute its uniform dot size and re-lay-out every cell.
+    private func observeFontChanges() {
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(fontDidChange),
+            name: DotFontSettings.didChange, object: nil
+        )
+    }
+
+    @objc private func fontDidChange() { setNeedsLayout() }
 
     private func setupResetGesture() {
         resetPanGesture.addTarget(self, action: #selector(handleResetSwipe(_:)))

@@ -8,10 +8,13 @@ class GameViewController: UIViewController {
     private let gameBoardView = GameBoardView()
     private let toolbarView = UIView()
     private let gridButton = UIButton()
+    private let fontButton = UIButton()
     private let overlayView = LifeInputOverlay()
     private let layoutSelectorView = LayoutSelectorView()
 
     private var showsGridSkeleton = false
+    /// Index into `DotFont.allStyles` for the active dot font.
+    private var fontIndex = DotFont.allStyles.firstIndex { $0.id == DotFontSettings.current.id } ?? 0
 
     override var prefersStatusBarHidden: Bool { true }
     override var prefersHomeIndicatorAutoHidden: Bool { true }
@@ -57,6 +60,13 @@ class GameViewController: UIViewController {
             self?.toggleGridSkeleton()
         }, for: .touchUpInside)
         toolbarView.addSubview(gridButton)
+
+        updateFontButtonAppearance()
+        fontButton.addAction(UIAction { [weak self] _ in
+            self?.cycleFont()
+        }, for: .touchUpInside)
+        toolbarView.addSubview(fontButton)
+
         view.addSubview(toolbarView)
     }
 
@@ -108,9 +118,14 @@ class GameViewController: UIViewController {
     private func layoutToolbarButtons() {
         let pad: CGFloat = 16
         let btnSize: CGFloat = 36
+        let gap: CGFloat = 8
         let y = (toolbarView.bounds.height - btnSize) / 2
         gridButton.frame = CGRect(
             x: toolbarView.bounds.width - pad - btnSize,
+            y: y, width: btnSize, height: btnSize
+        )
+        fontButton.frame = CGRect(
+            x: gridButton.frame.minX - gap - btnSize,
             y: y, width: btnSize, height: btnSize
         )
     }
@@ -127,6 +142,23 @@ class GameViewController: UIViewController {
         let symbol = showsGridSkeleton ? "square.grid.2x2.fill" : "square.grid.2x2"
         gridButton.setImage(UIImage(systemName: symbol), for: .normal)
         gridButton.tintColor = showsGridSkeleton ? .systemGreen : .gray
+    }
+
+    // MARK: - Dot font
+
+    /// Advance to the next dot font in `DotFont.allStyles`. Assigning
+    /// `DotFontSettings.current` posts `didChange`, which the board and overlay
+    /// observe to rebuild at the new glyph dimensions.
+    private func cycleFont() {
+        fontIndex = (fontIndex + 1) % DotFont.allStyles.count
+        DotFontSettings.current = DotFont.allStyles[fontIndex]
+        updateFontButtonAppearance()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    private func updateFontButtonAppearance() {
+        fontButton.setImage(UIImage(systemName: "textformat.size"), for: .normal)
+        fontButton.tintColor = .gray
     }
 
     // MARK: - State
