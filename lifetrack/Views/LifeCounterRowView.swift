@@ -10,7 +10,7 @@ class LifeCounterRowView: UIView {
     static let heightFraction: CGFloat = 0.13
     static let minHeight: CGFloat = CounterBadge.inputBadgeHeight
     static let maxHeight: CGFloat = CounterBadge.inputBadgeHeight
-    private static let badgeSpacing: CGFloat = 18
+    private static let badgeSpacing: CGFloat = 36
 
     func configure(values: [LifeCounter: Int]) {
         badges.forEach { $0.removeFromSuperview() }
@@ -35,7 +35,10 @@ class LifeCounterRowView: UIView {
     }
 
     func setBadgesUserInteractionEnabled(_ enabled: Bool) {
-        for badge in badges { badge.showsAdjustControls = enabled }
+        for badge in badges {
+            badge.usesCompactAdjustControls = enabled
+            badge.showsAdjustControls = enabled
+        }
         setNeedsLayout()
     }
 

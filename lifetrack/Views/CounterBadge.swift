@@ -45,7 +45,20 @@ class CounterBadge: UIView {
     var showsAdjustControls: Bool = false {
         didSet {
             updateInteraction()
-            backgroundColor = showsAdjustControls
+            backgroundColor = showsAdjustControls && !usesCompactAdjustControls
+                ? UIColor.white.withAlphaComponent(Self.inputPillFillAlpha)
+                : .clear
+            applyDisplay()
+            setNeedsLayout()
+        }
+    }
+
+    /// Compact overlay presentation: keeps the interactive tap/hold behavior of
+    /// `showsAdjustControls`, but visually renders as `[icon][value]` or
+    /// `[icon][+]` with no pill or explicit ± editor glyphs.
+    var usesCompactAdjustControls: Bool = false {
+        didSet {
+            backgroundColor = showsAdjustControls && !usesCompactAdjustControls
                 ? UIColor.white.withAlphaComponent(Self.inputPillFillAlpha)
                 : .clear
             applyDisplay()
@@ -171,6 +184,12 @@ class CounterBadge: UIView {
             }
             return Self.inlineIconSize + Self.inlineGap + inlineNumeralWidth(value: value)
         }
+        if usesCompactAdjustControls {
+            if value == 0 {
+                return Self.inputIconSize + Self.inlineGap + Self.inlinePlusSize
+            }
+            return Self.inputIconSize + Self.inlineGap + inputNumeralWidth(value: value)
+        }
         let icon = Self.inputIconSize
         let glyph = Self.inputGlyphSize
         let gap = Self.inputGlyphSpacing
@@ -187,7 +206,7 @@ class CounterBadge: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         let h = bounds.height
-        if showsAdjustControls {
+        if showsAdjustControls && !usesCompactAdjustControls {
             layer.cornerRadius = h / 2
             layer.masksToBounds = true
         } else {
@@ -230,6 +249,44 @@ class CounterBadge: UIView {
                 numberHost.view.frame = CGRect(
                     x: originX + icon + Self.inlineGap, y: valueY,
                     width: textW, height: style.lineHeight
+                )
+            }
+            return
+        }
+
+        if usesCompactAdjustControls {
+            let icon = Self.inputIconSize
+            let style = Typography.badgeInputValue
+            valueModel.font = style.swiftUIFont
+            valueModel.lineHeight = style.lineHeight
+
+            let iconY = (h - icon) / 2
+            let valueY = (h - style.lineHeight) / 2
+
+            minusGlyph.frame = .zero
+            plusGlyph.frame = .zero
+            if value == 0 {
+                let plus = Self.inlinePlusSize
+                let totalW = icon + Self.inlineGap + plus
+                let originX = (bounds.width - totalW) / 2
+                iconView.frame = CGRect(x: originX, y: iconY, width: icon, height: icon)
+                plusGlyph.frame = CGRect(
+                    x: originX + icon + Self.inlineGap,
+                    y: (h - plus) / 2,
+                    width: plus,
+                    height: plus
+                )
+                numberHost.view.frame = .zero
+            } else {
+                let textW = inputNumeralWidth(value: value)
+                let totalW = icon + Self.inlineGap + textW
+                let originX = (bounds.width - totalW) / 2
+                iconView.frame = CGRect(x: originX, y: iconY, width: icon, height: icon)
+                numberHost.view.frame = CGRect(
+                    x: originX + icon + Self.inlineGap,
+                    y: valueY,
+                    width: textW,
+                    height: style.lineHeight
                 )
             }
             return
@@ -301,11 +358,13 @@ class CounterBadge: UIView {
             : (showsInlinePlusWhenZero ? 1.0 : 0)
         iconView.alpha = active ? 1.0 : inactiveIconAlpha
         numberHost.view.alpha = active ? 1 : 0
-        minusGlyph.alpha = (showsAdjustControls && active) ? 1 : 0
+        minusGlyph.alpha = (showsAdjustControls && !usesCompactAdjustControls && active) ? 1 : 0
         // Interactive badges always show the +; read-only badges show it only as
         // the dim zero-state placeholder when the slot stays visible.
         if showsAdjustControls {
-            plusGlyph.alpha = active ? 1.0 : Self.dimmedAlpha
+            plusGlyph.alpha = usesCompactAdjustControls
+                ? (!active ? Self.dimmedAlpha : 0)
+                : (active ? 1.0 : Self.dimmedAlpha)
         } else {
             plusGlyph.alpha = (!active && showsInlinePlusWhenZero) ? Self.dimmedAlpha : 0
         }
@@ -371,6 +430,14 @@ class CounterBadge: UIView {
     }
 
     private func animateGlyph(forDelta delta: Int, pressed: Bool) {
+        if showsAdjustControls && usesCompactAdjustControls {
+            UIView.animate(withDuration: 0.12, delay: 0, options: [.beginFromCurrentState]) {
+                self.transform = pressed
+                    ? CGAffineTransform(scaleX: 1.08, y: 1.08)
+                    : .identity
+            }
+            return
+        }
         let glyph = delta > 0 ? plusGlyph : minusGlyph
         UIView.animate(withDuration: 0.12, delay: 0, options: [.beginFromCurrentState]) {
             glyph.transform = pressed

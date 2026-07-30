@@ -224,16 +224,17 @@ class GameBoardView: UIView {
         skeletonShape.path = path.cgPath
 
         // Tap targets tile each cell with no gaps/overlap: the life zones fill the
-        // dot-number area (outlined), and the commander-damage badges fill the
-        // band below it as contiguous columns. The center "edit" zone is a fixed
-        // `editZoneWidth` band centered on the number; the ± zones fill the rest.
+        // full area outside the commander band, and the commander-damage badges
+        // fill the near-edge band as contiguous columns. The center "edit" zone
+        // is a fixed `editZoneWidth` band centered on the number; the ± zones
+        // fill the rest.
         // Split along the player's left→right axis — 0°/180° split horizontally
         // (vertical dividers); ±90° split vertically — matching `tapZone`.
         let tapPath = UIBezierPath()
         let editHalf = PlayerCellView.editZoneWidth / 2
         for (i, slot) in slots.enumerated() where i < cellViews.count {
             let cell = cellViews[i]
-            let numRect = cell.numberAreaRect(in: self)
+            let numRect = cell.lifeTapAreaRect(in: self)
             tapPath.append(UIBezierPath(rect: numRect))
             let axisIsHorizontal = abs(Int(slot.rotationDegrees)) != 90
             for s in [-editHalf, editHalf] {

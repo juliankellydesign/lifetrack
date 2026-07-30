@@ -187,11 +187,11 @@ class LifeInputOverlay: UIView {
         let usableW = contentW - hPad * 2
         let usableH = contentH - vPad * 2
 
-        let counterRowH: CGFloat = CounterBadge.inputBadgeHeight
-        let damageRowH: CGFloat = CounterBadge.inputBadgeHeight
-
-        // Align the counter and damage rows with the top and bottom rows of the
-        // number pad: their centers match those rows' centers.
+        // The overlay uses the same slot-first mental model as the board: a left
+        // editing surface and a right keypad share four row tracks. Counters sit
+        // in the top-left track, commander damage in the bottom-left track, and
+        // the life number spans the two middle tracks. The dot-number hero
+        // animation still converges on `dotNumberView`'s final frame here.
         let padRows: CGFloat = 4
         let padRowSpacing: CGFloat = NumberPadView.rowSpacing
 
@@ -203,17 +203,15 @@ class LifeInputOverlay: UIView {
             let padCellH = (padH - (padRows - 1) * padRowSpacing) / padRows
             let padColW = padCellH * CGFloat(3)
             let lifeColW = usableW - padColW
-            let topRowCenterY = vPad + padCellH / 2
-            let bottomRowCenterY = vPad + padH - padCellH / 2
-
-            let counterY = topRowCenterY - counterRowH / 2
-            let damageY = bottomRowCenterY - damageRowH / 2
-            let lifeTop = counterY + counterRowH
-            let lifeAreaH = damageY - lifeTop
+            let rowStride = padCellH + padRowSpacing
+            let counterY = vPad
+            let lifeTop = vPad + rowStride
+            let lifeAreaH = padCellH * 2 + padRowSpacing
+            let damageY = vPad + rowStride * 3
 
             counterRow.frame = CGRect(
                 x: hPad, y: counterY,
-                width: lifeColW, height: counterRowH
+                width: lifeColW, height: padCellH
             )
             dotNumberView.frame = CGRect(
                 x: hPad, y: lifeTop,
@@ -221,7 +219,7 @@ class LifeInputOverlay: UIView {
             )
             damageRow.frame = CGRect(
                 x: hPad, y: damageY,
-                width: lifeColW, height: damageRowH
+                width: lifeColW, height: padCellH
             )
             numberPadView.frame = CGRect(
                 x: hPad + lifeColW, y: vPad,
@@ -231,19 +229,20 @@ class LifeInputOverlay: UIView {
             // Portrait fallback: stack life column above keypad.
             let padH = contentH * 0.45
             let lifeH = usableH - padH
-            let lifeAreaH = lifeH - counterRowH - damageRowH
+            let trackH = lifeH / 4
+            let lifeAreaH = trackH * 2
 
             counterRow.frame = CGRect(
                 x: hPad, y: vPad,
-                width: usableW, height: counterRowH
+                width: usableW, height: trackH
             )
             dotNumberView.frame = CGRect(
-                x: hPad, y: vPad + counterRowH,
+                x: hPad, y: vPad + trackH,
                 width: usableW, height: lifeAreaH
             )
             damageRow.frame = CGRect(
-                x: hPad, y: vPad + counterRowH + lifeAreaH,
-                width: usableW, height: damageRowH
+                x: hPad, y: vPad + trackH + lifeAreaH,
+                width: usableW, height: trackH
             )
             numberPadView.frame = CGRect(
                 x: hPad, y: vPad + lifeH,
@@ -339,6 +338,8 @@ class LifeInputOverlay: UIView {
             } else {
                 inputText.removeLast()
             }
+        case .clear:
+            inputText = ""
         case .confirm:
             if !inputText.isEmpty, let value = Int(inputText) {
                 lifeTotal = value

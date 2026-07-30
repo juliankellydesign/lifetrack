@@ -130,9 +130,11 @@ class PlayerCellView: UIView {
         let contentW = (swapped ? bounds.height : bounds.width) - Self.contentInset * 2
         let contentH = (swapped ? bounds.width : bounds.height) - Self.verticalInset * 2
 
-        contentContainer.transform = .identity
-        contentContainer.bounds = CGRect(x: 0, y: 0, width: contentW, height: contentH)
-        contentContainer.center = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
+        UIView.performWithoutAnimation {
+            contentContainer.transform = .identity
+            contentContainer.bounds = CGRect(x: 0, y: 0, width: contentW, height: contentH)
+            contentContainer.center = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
+        }
 
         // 44pt commander band pinned to the bottom (near edge); the dot number
         // area flexes to fill the rest above it.
@@ -177,7 +179,12 @@ class PlayerCellView: UIView {
                                      width: dW, height: dH)
         }
 
-        contentContainer.transform = CGAffineTransform(rotationAngle: rotation * .pi / 180)
+        // Value changes animate a layout pass for the temporary delta readout.
+        // Keep the parent orientation out of that transaction so 180-degree
+        // seats do not interpolate through an unintended flip.
+        UIView.performWithoutAnimation {
+            contentContainer.transform = CGAffineTransform(rotationAngle: rotation * .pi / 180)
+        }
     }
 
     /// Height reserved for the commander-damage band below the life total, given
@@ -217,33 +224,30 @@ class PlayerCellView: UIView {
     }
 
     /// Hit-target rects of the tappable commander-damage badges, in `view`'s
-    /// coordinate space — the tiled band columns from `PlayerCellBadgeBar`, so the
-    /// grid skeleton outlines exactly what's tappable. The `convert` walks the
-    /// rotated content container, so these come back oriented to the board.
+    /// coordinate space. The visible badge row stays content-inset for legibility,
+    /// but the hit columns expand to the full near-edge band of the cell.
     func commanderHitRects(in view: UIView) -> [CGRect] {
         layoutIfNeeded()
-        return badgeBar.commanderTapRects().map { badgeBar.convert($0, to: view) }
+        return commanderHitRectsInBounds().map { convert($0, to: view) }
     }
 
-    /// The life-tap region (the dot number area, above the badge band) in `view`'s
-    /// coordinate space. The grid skeleton splits this into thirds so the life
-    /// tap zones don't bleed into the commander-badge band below.
-    func numberAreaRect(in view: UIView) -> CGRect {
+    /// The life-tap region above the full commander band, in `view`'s coordinate
+    /// space. This intentionally follows the cell bounds, not the inset dot view,
+    /// so the skeleton matches the full hit surface.
+    func lifeTapAreaRect(in view: UIView) -> CGRect {
         layoutIfNeeded()
-        return dotNumberView.convert(dotNumberView.bounds, to: view)
+        return convert(lifeTapAreaRectInBounds(), to: view)
     }
 
     // MARK: - Touch handling
 
-    /// The badge bar lives inside the rotated (and non-interactive)
-    /// `contentContainer`, so normal hit-testing never reaches the commander
-    /// badges. Route taps that fall in the badge band straight to the badge whose
-    /// tiled column they hit (so a tap bumps commander damage); everything above
-    /// the band falls through to the cell's own life-tap handling.
+    /// The badge bar lives inside the rotated, non-interactive content container,
+    /// so normal hit-testing never reaches the commander badges. Route taps that
+    /// fall in the full near-edge commander band to the matching badge; everything
+    /// else falls through to the cell's life-tap handling.
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         if !isBeingEdited {
-            let barPoint = badgeBar.convert(point, from: self)
-            if let badge = badgeBar.commanderBadge(atBarPoint: barPoint) {
+            if let badge = commanderBadge(at: point) {
                 return badge
             }
         }
@@ -309,6 +313,56 @@ class PlayerCellView: UIView {
     }
 
     // MARK: - Helpers
+
+    private func lifeTapAreaRectInBounds() -> CGRect {
+        let band = min(Self.commanderBandHeight, abs(Int(rotation)) == 90 ? bounds.width : bounds.height)
+        switch Int(rotation) {
+        case 90:
+            return CGRect(x: band, y: 0, width: max(0, bounds.width - band), height: bounds.height)
+        case -90:
+            return CGRect(x: 0, y: 0, width: max(0, bounds.width - band), height: bounds.height)
+        case 180, -180:
+            return CGRect(x: 0, y: band, width: bounds.width, height: max(0, bounds.height - band))
+        default:
+            return CGRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - band))
+        }
+    }
+
+    private func commanderHitRectsInBounds() -> [CGRect] {
+        let barRects = badgeBar.commanderTapRects()
+        guard !barRects.isEmpty, badgeBar.bounds.width > 0 else { return [] }
+
+        let swapped = abs(Int(rotation)) == 90
+        let axisLen = swapped ? bounds.height : bounds.width
+        let band = min(Self.commanderBandHeight, swapped ? bounds.width : bounds.height)
+        let scale = axisLen / badgeBar.bounds.width
+
+        return barRects.map { rect in
+            let axisMin = rect.minX * scale
+            let axisMax = rect.maxX * scale
+            let axisSize = max(0, axisMax - axisMin)
+
+            switch Int(rotation) {
+            case 90:
+                return CGRect(x: 0, y: axisMin, width: band, height: axisSize)
+            case -90:
+                return CGRect(x: bounds.width - band, y: bounds.height - axisMax, width: band, height: axisSize)
+            case 180, -180:
+                return CGRect(x: bounds.width - axisMax, y: 0, width: axisSize, height: band)
+            default:
+                return CGRect(x: axisMin, y: bounds.height - band, width: axisSize, height: band)
+            }
+        }
+    }
+
+    private func commanderBadge(at point: CGPoint) -> CommanderDamageBadge? {
+        layoutIfNeeded()
+        for (i, rect) in commanderHitRectsInBounds().enumerated() where rect.contains(point) {
+            guard i < badgeBar.damageBadges.count else { continue }
+            return badgeBar.damageBadges[i]
+        }
+        return nil
+    }
 
     private func playerFraction(at location: CGPoint) -> CGFloat {
         let deg = Int(rotation)

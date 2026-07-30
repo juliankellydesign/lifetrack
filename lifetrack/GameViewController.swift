@@ -11,6 +11,8 @@ class GameViewController: UIViewController {
     private let fontButton = UIButton()
     private let overlayView = LifeInputOverlay()
     private let layoutSelectorView = LayoutSelectorView()
+    private let screenSkeletonView = UIView()
+    private let screenEdgeShape = CAShapeLayer()
 
     private var showsGridSkeleton = false
     /// Index into `DotFont.allStyles` for the active dot font.
@@ -27,6 +29,7 @@ class GameViewController: UIViewController {
         setupToolbar()
         setupOverlay()
         setupLayoutSelector()
+        setupScreenSkeleton()
         resetPlayers(layout: currentLayout)
     }
 
@@ -73,12 +76,16 @@ class GameViewController: UIViewController {
     }
 
     private func setupToolbar() {
+        gridButton.isAccessibilityElement = true
+        gridButton.accessibilityLabel = "Grid skeleton"
         updateGridButtonAppearance()
         gridButton.addAction(UIAction { [weak self] _ in
             self?.toggleGridSkeleton()
         }, for: .touchUpInside)
         toolbarView.addSubview(gridButton)
 
+        fontButton.isAccessibilityElement = true
+        fontButton.accessibilityLabel = "Dot font"
         updateFontButtonAppearance()
         fontButton.addAction(UIAction { [weak self] _ in
             self?.cycleFont()
@@ -103,6 +110,18 @@ class GameViewController: UIViewController {
             self?.startGame(with: layout)
         }
         view.addSubview(layoutSelectorView)
+    }
+
+    private func setupScreenSkeleton() {
+        screenSkeletonView.isUserInteractionEnabled = false
+        screenSkeletonView.isHidden = true
+
+        screenEdgeShape.fillColor = UIColor.clear.cgColor
+        screenEdgeShape.strokeColor = UIColor.systemGreen.withAlphaComponent(0.9).cgColor
+        screenEdgeShape.lineWidth = 1
+        screenSkeletonView.layer.addSublayer(screenEdgeShape)
+
+        view.addSubview(screenSkeletonView)
     }
 
     // MARK: - Layout
@@ -131,6 +150,7 @@ class GameViewController: UIViewController {
 
         overlayView.frame = view.bounds
         layoutSelectorView.frame = view.bounds
+        updateScreenSkeleton()
     }
 
     private func layoutToolbarButtons() {
@@ -153,13 +173,25 @@ class GameViewController: UIViewController {
     private func toggleGridSkeleton() {
         showsGridSkeleton.toggle()
         gameBoardView.showsGridSkeleton = showsGridSkeleton
+        screenSkeletonView.isHidden = !showsGridSkeleton
+        updateScreenSkeleton()
         updateGridButtonAppearance()
+    }
+
+    private func updateScreenSkeleton() {
+        screenSkeletonView.frame = view.bounds
+        screenEdgeShape.frame = screenSkeletonView.bounds
+        screenEdgeShape.path = UIBezierPath(
+            rect: screenSkeletonView.bounds.insetBy(dx: 0.5, dy: 0.5)
+        ).cgPath
+        view.bringSubviewToFront(screenSkeletonView)
     }
 
     private func updateGridButtonAppearance() {
         let symbol = showsGridSkeleton ? "square.grid.2x2.fill" : "square.grid.2x2"
         gridButton.setImage(UIImage(systemName: symbol), for: .normal)
         gridButton.tintColor = showsGridSkeleton ? .systemGreen : .gray
+        gridButton.accessibilityValue = showsGridSkeleton ? "On" : "Off"
     }
 
     // MARK: - Dot font
@@ -199,6 +231,7 @@ class GameViewController: UIViewController {
 
     private func showLayoutSelector(animated: Bool) {
         view.bringSubviewToFront(layoutSelectorView)
+        view.bringSubviewToFront(screenSkeletonView)
         layoutSelectorView.isHidden = false
         toolbarView.isUserInteractionEnabled = false
         if animated {
@@ -214,6 +247,7 @@ class GameViewController: UIViewController {
 
     private func hideLayoutSelector(animated: Bool, completion: (() -> Void)? = nil) {
         toolbarView.isUserInteractionEnabled = true
+        view.bringSubviewToFront(screenSkeletonView)
         let finish = {
             self.layoutSelectorView.isHidden = true
             completion?()

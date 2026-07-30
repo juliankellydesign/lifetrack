@@ -3,6 +3,7 @@ import UIKit
 enum NumberPadKey {
     case digit(Int)
     case backspace
+    case clear
     case confirm
 }
 
@@ -18,7 +19,7 @@ class NumberPadView: UIView {
         [.digit(1), .digit(2), .digit(3)],
         [.digit(4), .digit(5), .digit(6)],
         [.digit(7), .digit(8), .digit(9)],
-        [.confirm, .digit(0), .backspace],
+        [.clear, .digit(0), .backspace],
     ]
 
     override init(frame: CGRect) {
@@ -58,9 +59,10 @@ class NumberPadView: UIView {
                 case .backspace:
                     btn.setImage(Self.sizedActionIcon(named: "icon-delete"), for: .normal)
                     btn.imageView?.contentMode = .center
+                case .clear:
+                    btn.setAttributedTitle(Self.digitTitle("×"), for: .normal)
                 case .confirm:
-                    btn.setImage(Self.sizedActionIcon(named: "icon-checkmark"), for: .normal)
-                    btn.imageView?.contentMode = .center
+                    break
                 }
 
                 let captured = key

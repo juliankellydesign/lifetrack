@@ -11,7 +11,7 @@ class CommanderDamageRowView: UIView {
     static let heightFraction: CGFloat = 0.13
     static let minHeight: CGFloat = Typography.badgeInlineValue.lineHeight
     static let maxHeight: CGFloat = 36
-    private static let badgeSpacing: CGFloat = 12
+    private static let badgeSpacing: CGFloat = 56
 
     /// Rotation (in degrees) of the player cell containing this row. Propagated to
     /// each badge's commander icon so its dots stay aligned to the real board.
@@ -50,6 +50,7 @@ class CommanderDamageRowView: UIView {
 
     func setBadgesUserInteractionEnabled(_ enabled: Bool) {
         for badge in badges {
+            badge.usesCompactAdjustControls = enabled
             badge.showsAdjustControls = enabled
         }
         setNeedsLayout()
