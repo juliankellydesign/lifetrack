@@ -47,8 +47,8 @@ The phone is a shared board in the middle of a real table.
   reads it. Do not infer rotation from a cell's screen position.
 - Side players read sideways, top players read upside-down from the phone's
   point of view, and each badge/gesture should respect that orientation.
-- Commander-damage badges show a mini table layout with the source opponent
-  highlighted and counter-rotated for the viewing player.
+- Focused commander-damage mode temporarily rotates every board number toward
+  the selected recipient, regardless of each source cell's normal seat rotation.
 
 When adding layout, gesture, or badge behavior, route orientation through the
 existing helpers (`PlayerCellView.playerFraction`, `PlayerLayoutIconView`'s
@@ -65,22 +65,28 @@ screen coordinates.
 - Tap the life total in the input overlay to confirm.
 - Swipe across the board to reset. A committed reset wipes cells off, shows the
   layout selector, then rolls new cells back in clockwise after selection.
-- Tap a commander-damage badge in a player cell to add 1 commander damage from
-  that opponent; hold it to repeat +1 ticks. Each tick also subtracts 1 life
-  from the damaged player.
-- In the input overlay, counters and commander damage render compactly as
-  `icon + value` (or `icon + +` at zero) but remain editable: tap/hold the right
-  side to increment, and tap/hold the left side to decrement once nonzero.
+- Each player footer has a `COMMANDER` button. Tap it to focus that player as
+  the damage recipient.
+- Entering commander mode sends a radial dot ripple from the recipient's life
+  total. Every other cell becomes the damage dealt by that source player to the
+  recipient, starts at zero, and rotates to face the recipient.
+- Source damage totals use the board's normal left/right -/+ controls and repeat
+  behavior. Each applied damage point also subtracts one recipient life; reducing
+  damage restores the same amount of life.
+- The recipient's live life total stays visible at 30% opacity without adjust
+  controls. Tap its fixed center band to exit with the reverse radial ripple.
+- Commander damage is assigned only in focused commander mode, not in the exact
+  life input overlay.
 - Counters supported: poison, energy, rad, experience.
-- Commander damage turns red at 21. Poison counters turn red at 10. Energy,
-  rad, and experience counters do not have static lethal thresholds.
+- Poison counters turn red at 10. Energy, rad, and experience counters do not
+  have static lethal thresholds.
 - The bottom-right toolbar has two buttons: dot-font cycle and grid skeleton.
 - The dot-font cycle advances through tall, narrow, normal, wide, xwide, and
   xxwide bitmap styles.
 - The grid skeleton draws a green border at the physical screen edges, green
   board/cell outlines, and orange region outlines. Orange follows the full tap
   geometry, not the visual content padding: life zones fill the cell outside the
-  commander band, while commander badges fill the full near-edge band as columns.
+  commander band, while the COMMANDER target fills the full near-edge band.
 
 ## Source Layout
 
@@ -107,35 +113,30 @@ Main board and cell views:
 
 - `lifetrack/Views/GameBoardView.swift` - projects `cellRect` to board slots,
   applies inter-cell gutters, computes uniform board dot size, owns reset swipe,
-  roll-in animation, and debug skeleton layers.
+  focused commander mode, radial transitions, roll-in animation, and debug
+  skeleton layers.
 - `lifetrack/Views/PlayerCellView.swift` - one player's life area, rotated
-  content container, life gestures, commander badge hit routing, +/- icons,
-  transient net-change readout, sweep fade, and edit request.
+  content container, life/commander gestures, +/- icons, transient net-change
+  readout, ripple/sweep fade, and edit request.
 - `lifetrack/Views/PlayerCellBadgeBar.swift` - 44pt near-edge badge band that
-  lays out commander badges and counters; commander hit rects tile within the
-  bar coordinate space.
+  lays out the COMMANDER button and any visible life counters.
 
-Commander and counter badges:
+Counter badges:
 
-- `lifetrack/Views/CommanderDamageBadge.swift` - commander badge with highlighted
-  opponent layout icon, always-visible zero state, inline +1 tapping, red lethal
-  color at 21.
-- `lifetrack/Views/CommanderDamageRowView.swift` - commander badges in the input
-  overlay with adjust controls.
 - `lifetrack/Views/LifeCounterBadge.swift` and
   `lifetrack/Views/LifeCounterRowView.swift` - poison, energy, rad, and
   experience counters.
 - `lifetrack/Views/CounterBadge.swift` - shared badge base, hosted SwiftUI
   `RollingCounterText`, inline display, overlay +/- editor, repeat behavior.
 - `lifetrack/Views/PlayerLayoutIconView.swift` - mini seating diagram for the
-  selector and commander badges.
+  layout selector.
 
 Input and selector:
 
 - `lifetrack/Views/LifeInputOverlay.swift` - full-screen editor with the same
   slot-first layout model as the board: a rotated content container, top-left
-  counter row, two-row life-total region, bottom-left commander row, right-side
-  number pad, and its own grid skeleton. Keep the dot-number hero transition:
+  counter row, three-row life-total region, right-side number pad, and its own
+  grid skeleton. Keep the dot-number hero transition:
   the overlay number starts at the originating cell's visual dot center/size and
   animates into this final grid slot.
 - `lifetrack/Views/NumberPadView.swift` - 3 by 4 number pad (`1...9`, clear
@@ -211,19 +212,22 @@ Important touch behavior:
 - The +/- zones fill the rest of the cell outside that center band.
 - `playerFraction(at:)` maps a point to the player's left-to-right axis for all
   four rotations. Use it instead of direct `x` checks.
-- Commander badge touches are routed through full-cell near-edge band rects that
-  scale the visible `PlayerCellBadgeBar` columns out to the slot edges.
+- The COMMANDER button is routed through the full-cell near-edge band while its
+  visible capsule stays compact inside `PlayerCellBadgeBar`.
 
 ## Animation and Haptics
 
 - Life dot changes animate with row-staggered UIKit spring animations.
+- Commander-mode transitions use the same 0.3-second per-dot spring as ordinary
+  digit rolls, with radial delays based on distance from the recipient's number.
+  Entry expands center-out; exit reverses the timing and collapses edge-in.
 - `.decreasing` rolls top-to-bottom; `.increasing` rolls bottom-to-top.
 - Animated changes use `.beginFromCurrentState`, so rapid taps retarget the
   current animation instead of queueing delayed rolls.
 - Reset swipe fades dots and badges by position against a moving edge.
 - Reset roll-in starts from `snapToOff()` and restores cells in
   `clockwiseIndex * 100ms` order.
-- Light haptic: single life ticks and badge ticks.
+- Light haptic: single life and commander-damage ticks.
 - Medium haptic: bulk life repeat, edit overlay activation, reset commit.
 
 ## Documentation Gotchas

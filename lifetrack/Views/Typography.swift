@@ -13,48 +13,53 @@ import SwiftUI
 /// The dot-matrix life total is a *different* system — it's a bitmap font, not
 /// Karl — and is sized by `DotNumberView`/`GameBoardView`, not here.
 enum Typography {
-    /// One text style: face + size + line height, with monospaced-digit figures
-    /// applied where digits roll in place (badges, life input) so advances stay
-    /// stable as the number changes.
-    struct Style {
-        /// A `Karl.*` font name (e.g. `Karl.medium`).
-        let face: String
-        let size: CGFloat
-        let lineHeight: CGFloat
-        let monospacedDigits: Bool
+  /// One text style: face + size + line height, with monospaced-digit figures
+  /// applied where digits roll in place (badges, life input) so advances stay
+  /// stable as the number changes.
+  struct Style {
+    /// A `Karl.*` font name (e.g. `Karl.medium`).
+    let face: String
+    let size: CGFloat
+    let lineHeight: CGFloat
+    let monospacedDigits: Bool
 
-        /// UIKit font — for `UILabel`, attributed strings, and text measurement.
-        var uiFont: UIFont {
-            monospacedDigits
-                ? Karl.monospacedDigit(face, size: size)
-                : Karl.font(face, size: size)
-        }
-
-        /// SwiftUI font — for hosted `Text` (e.g. the rolling badge numeral).
-        var swiftUIFont: Font {
-            let base = Font.custom(face, size: size)
-            return monospacedDigits ? base.monospacedDigit() : base
-        }
+    /// UIKit font — for `UILabel`, attributed strings, and text measurement.
+    var uiFont: UIFont {
+      monospacedDigits
+        ? Karl.monospacedDigit(face, size: size)
+        : Karl.font(face, size: size)
     }
 
-    /// Number-pad digit keys (0–9) in the life-input overlay.
-    static let keypadDigit = Style(
-        face: Karl.medium, size: 32, lineHeight: 36, monospacedDigits: false
-    )
+    /// SwiftUI font — for hosted `Text` (e.g. the rolling badge numeral).
+    var swiftUIFont: Font {
+      let base = Font.custom(face, size: size)
+      return monospacedDigits ? base.monospacedDigit() : base
+    }
+  }
 
-    /// Badge numeral as it sits inline on a player-cell badge (read-only).
-    static let badgeInlineValue = Style(
-        face: Karl.medium, size: 24, lineHeight: 28, monospacedDigits: true
-    )
+  /// Number-pad digit keys (0–9) in the life-input overlay.
+  static let keypadDigit = Style(
+    face: Karl.medium, size: 32, lineHeight: 36, monospacedDigits: false
+  )
 
-    /// Badge numeral in the life-input overlay (interactive, one step larger).
-    static let badgeInputValue = Style(
-        face: Karl.medium, size: 28, lineHeight: 32, monospacedDigits: true
-    )
+  /// Badge numeral as it sits inline on a player-cell badge (read-only).
+  static let badgeInlineValue = Style(
+    face: Karl.medium, size: 24, lineHeight: 28, monospacedDigits: true
+  )
 
-    /// Transient net-change readout next to a life total (e.g. "+5" / "−3").
-    /// Tabular figures so the rolling digits keep a stable width.
-    static let lifeDelta = Style(
-        face: Karl.medium, size: 28, lineHeight: 32, monospacedDigits: true
-    )
+  /// Badge numeral in the life-input overlay (interactive, one step larger).
+  static let badgeInputValue = Style(
+    face: Karl.medium, size: 28, lineHeight: 32, monospacedDigits: true
+  )
+
+  /// Transient net-change readout next to a life total (e.g. "+5" / "−3").
+  /// Tabular figures so the rolling digits keep a stable width.
+  static let lifeDelta = Style(
+    face: Karl.medium, size: 28, lineHeight: 32, monospacedDigits: true
+  )
+
+  /// Main-board entry point for the focused commander-damage mode.
+  static let commanderButton = Style(
+    face: Karl.bold, size: 16, lineHeight: 20, monospacedDigits: false
+  )
 }

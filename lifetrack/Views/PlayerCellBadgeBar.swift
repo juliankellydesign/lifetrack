@@ -1,107 +1,99 @@
 import UIKit
 
-/// Single horizontal row used in the main player cell that holds both the
-/// commander damage badges and the life-counter badges. Hidden (zero-value)
-/// badges collapse to no width so the visible set stays centered as one group.
+/// Main-cell footer containing the commander-mode entry button and any nonzero
+/// life counters. Commander damage itself is edited in the board-wide focused
+/// mode, never inline in this row.
 class PlayerCellBadgeBar: UIView {
-    private(set) var damageBadges: [CommanderDamageBadge] = []
-    private(set) var counterBadges: [LifeCounterBadge] = []
+  private(set) var counterBadges: [LifeCounterBadge] = []
+  let commanderButton = UIButton(type: .custom)
 
-    /// Called when a commander-damage badge is tapped in the cell (always +1).
-    var onAdjustDamage: ((_ opponentId: Int, _ delta: Int) -> Void)?
+  var onCommanderRequested: (() -> Void)?
 
-    private static let badgeSpacing: CGFloat = 18
+  private static let badgeSpacing: CGFloat = 18
+  private static let buttonWidth: CGFloat = 124
+  private static let buttonHeight: CGFloat = 32
 
-    /// Cell rotation in degrees, propagated to each commander badge so its
-    /// dot icon stays oriented to the real board.
-    var iconRotation: CGFloat = 0 {
-        didSet { for b in damageBadges { b.boardRotation = iconRotation } }
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    setupCommanderButton()
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    setupCommanderButton()
+  }
+
+  private func setupCommanderButton() {
+    let style = Typography.commanderButton
+    commanderButton.setAttributedTitle(
+      NSAttributedString(
+        string: "COMMANDER",
+        attributes: [
+          .font: style.uiFont,
+          .foregroundColor: UIColor.white.withAlphaComponent(0.65),
+          .kern: 0.8,
+        ]
+      ),
+      for: .normal
+    )
+    commanderButton.layer.borderWidth = 1
+    commanderButton.layer.borderColor = UIColor.white.withAlphaComponent(0.25).cgColor
+    commanderButton.layer.cornerCurve = .continuous
+    commanderButton.accessibilityLabel = "Commander damage"
+    commanderButton.accessibilityHint = "Shows damage dealt by each opposing commander"
+    commanderButton.addAction(UIAction { [weak self] _ in
+      self?.onCommanderRequested?()
+    }, for: .touchUpInside)
+    addSubview(commanderButton)
+  }
+
+  func configure(counters: [LifeCounter: Int]) {
+    counterBadges.forEach { $0.removeFromSuperview() }
+    counterBadges.removeAll()
+
+    for kind in LifeCounter.allCases {
+      let badge = LifeCounterBadge(kind: kind)
+      badge.setValue(counters[kind] ?? 0, animated: false)
+      addSubview(badge)
+      counterBadges.append(badge)
     }
 
-    func configure(
-        layout: PlayerLayout,
-        opponentIds: [Int],
-        damages: [Int],
-        counters: [LifeCounter: Int]
-    ) {
-        damageBadges.forEach { $0.removeFromSuperview() }
-        counterBadges.forEach { $0.removeFromSuperview() }
-        damageBadges.removeAll()
-        counterBadges.removeAll()
+    setNeedsLayout()
+  }
 
-        for (i, oppId) in opponentIds.enumerated() {
-            let badge = CommanderDamageBadge(opponentSeatIndex: oppId, layout: layout)
-            badge.setDamage(i < damages.count ? damages[i] : 0, animated: false)
-            badge.boardRotation = iconRotation
-            badge.onAdjust = { [weak self] delta in
-                self?.onAdjustDamage?(oppId, delta)
-            }
-            addSubview(badge)
-            damageBadges.append(badge)
-        }
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    let h = bounds.height
+    let widths = counterBadges.map { $0.intrinsicWidth(forHeight: h) }
+    let visibleCount = widths.filter { $0 > 0 }.count
+    let counterWidth = widths.reduce(0, +)
+      + CGFloat(max(visibleCount - 1, 0)) * Self.badgeSpacing
+    let hasCounters = counterWidth > 0
+    let totalW = Self.buttonWidth + (hasCounters ? Self.badgeSpacing + counterWidth : 0)
+    var x = max(0, (bounds.width - totalW) / 2)
 
-        for kind in LifeCounter.allCases {
-            let badge = LifeCounterBadge(kind: kind)
-            badge.setValue(counters[kind] ?? 0, animated: false)
-            addSubview(badge)
-            counterBadges.append(badge)
-        }
+    let buttonH = min(Self.buttonHeight, h)
+    commanderButton.frame = CGRect(
+      x: x,
+      y: (h - buttonH) / 2,
+      width: Self.buttonWidth,
+      height: buttonH
+    )
+    commanderButton.layer.cornerRadius = buttonH / 2
+    x += Self.buttonWidth + (hasCounters ? Self.badgeSpacing : 0)
 
-        setNeedsLayout()
+    for (i, badge) in counterBadges.enumerated() {
+      let w = widths[i]
+      badge.frame = CGRect(x: x, y: 0, width: w, height: h)
+      if w > 0 {
+        x += w + Self.badgeSpacing
+      }
     }
+  }
 
-    /// Targeted update of one commander badge (animated), used after an inline tap
-    /// instead of rebuilding the whole bar.
-    func setDamage(_ value: Int, forOpponent opponentId: Int) {
-        guard let badge = damageBadges.first(where: { $0.opponentSeatIndex == opponentId }) else { return }
-        badge.setDamage(value, animated: true)
-        setNeedsLayout()
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let badges: [CounterBadge] = damageBadges + counterBadges
-        guard !badges.isEmpty else { return }
-        let h = bounds.height
-        let widths = badges.map { $0.intrinsicWidth(forHeight: h) }
-        let visibleCount = widths.filter { $0 > 0 }.count
-        let totalW = widths.reduce(0, +) + CGFloat(max(visibleCount - 1, 0)) * Self.badgeSpacing
-        var x = max(0, (bounds.width - totalW) / 2)
-        for (i, badge) in badges.enumerated() {
-            let w = widths[i]
-            badge.frame = CGRect(x: x, y: 0, width: w, height: h)
-            if w > 0 { x += w + Self.badgeSpacing }
-        }
-    }
-
-    /// Tap-target rects for the commander badges, in the bar's own coordinate
-    /// space. They **tile** the band — no gaps, overlap, or margin: each spans
-    /// from the midpoint with its left neighbour to the midpoint with its right
-    /// neighbour, the outer two reaching the bar edges (or stopping at the first
-    /// visible counter badge on the right). Full bar height. The visible badge
-    /// content stays centered inside each; only the hit area fills the row.
-    func commanderTapRects() -> [CGRect] {
-        guard !damageBadges.isEmpty else { return [] }
-        let h = bounds.height
-        // Don't swallow the counter badges' space — stop at the leftmost visible one.
-        let counterLeft = counterBadges
-            .filter { $0.intrinsicWidth(forHeight: h) > 0 }
-            .map { $0.frame.minX }
-            .min()
-        let rightLimit = counterLeft ?? bounds.width
-        let centers = damageBadges.map { $0.frame.midX }
-        return damageBadges.indices.map { i in
-            let left = i == 0 ? 0 : (centers[i - 1] + centers[i]) / 2
-            let right = i == damageBadges.count - 1 ? rightLimit : (centers[i] + centers[i + 1]) / 2
-            return CGRect(x: left, y: 0, width: max(0, right - left), height: h)
-        }
-    }
-
-    /// The commander badge whose tiled tap rect contains `p` (bar coords), if any.
-    func commanderBadge(atBarPoint p: CGPoint) -> CommanderDamageBadge? {
-        for (i, rect) in commanderTapRects().enumerated() where rect.contains(p) {
-            return damageBadges[i]
-        }
-        return nil
-    }
+  /// The full footer band enters commander mode, keeping the target generous
+  /// even when the visible capsule is compact.
+  func commanderTapRect() -> CGRect {
+    bounds
+  }
 }
