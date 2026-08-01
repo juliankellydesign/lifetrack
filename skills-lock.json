@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "uikit-expert": {
+      "source": "ivan-magda/uikit-expert-skill",
+      "sourceType": "github",
+      "computedHash": "228e5b8aa192cd62d894414bc3dbb17c4c4c0303931acda6f335585d63bca20d"
+    }
+  }
+}
