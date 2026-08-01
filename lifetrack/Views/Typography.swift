@@ -14,7 +14,7 @@ import SwiftUI
 /// Karl — and is sized by `DotNumberView`/`GameBoardView`, not here.
 enum Typography {
   /// One text style: face + size + line height, with monospaced-digit figures
-  /// applied where digits roll in place (badges, life input) so advances stay
+  /// applied where digits roll in place so advances stay
   /// stable as the number changes.
   struct Style {
     /// A `Karl.*` font name (e.g. `Karl.medium`).
@@ -42,24 +42,9 @@ enum Typography {
     face: Karl.medium, size: 32, lineHeight: 36, monospacedDigits: false
   )
 
-  /// Badge numeral as it sits inline on a player-cell badge (read-only).
-  static let badgeInlineValue = Style(
-    face: Karl.medium, size: 24, lineHeight: 28, monospacedDigits: true
-  )
-
-  /// Badge numeral in the life-input overlay (interactive, one step larger).
-  static let badgeInputValue = Style(
-    face: Karl.medium, size: 28, lineHeight: 32, monospacedDigits: true
-  )
-
   /// Transient net-change readout next to a life total (e.g. "+5" / "−3").
   /// Tabular figures so the rolling digits keep a stable width.
   static let lifeDelta = Style(
     face: Karl.medium, size: 28, lineHeight: 32, monospacedDigits: true
-  )
-
-  /// Main-board entry point for the focused commander-damage mode.
-  static let commanderButton = Style(
-    face: Karl.bold, size: 16, lineHeight: 20, monospacedDigits: false
   )
 }

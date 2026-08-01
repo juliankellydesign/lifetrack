@@ -21,6 +21,14 @@ class GameViewController: UIViewController {
   override var prefersStatusBarHidden: Bool { true }
   override var prefersHomeIndicatorAutoHidden: Bool { true }
 
+  override func loadView() {
+    let rootView = GameInteractionView()
+    rootView.onInteraction = { [weak self] in
+      self?.gameBoardView.revealFirstPlayerSelection()
+    }
+    view = rootView
+  }
+
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .black
@@ -68,13 +76,39 @@ class GameViewController: UIViewController {
         at: index,
         lifeTotal: self.players[index].lifeTotal,
         direction: applied > 0 ? .decreasing : .increasing,
-        animated: true
+        animated: true,
+        shakes: false
       )
     }
     gameBoardView.onResetRequested = { [weak self] in
       self?.handleSwipeReset()
     }
+    gameBoardView.onFirstPlayerSweepActiveChanged = { [weak self] isActive in
+      self?.setFirstPlayerSweepChromeHidden(isActive)
+    }
     view.addSubview(gameBoardView)
+  }
+
+  private func setFirstPlayerSweepChromeHidden(_ hidden: Bool) {
+    toolbarView.accessibilityElementsHidden = hidden
+    screenSkeletonView.accessibilityElementsHidden = hidden
+
+    if hidden {
+      toolbarView.layer.removeAllAnimations()
+      screenSkeletonView.layer.removeAllAnimations()
+      toolbarView.alpha = 0
+      screenSkeletonView.alpha = 0
+      return
+    }
+
+    UIView.animate(
+      withDuration: 0.22,
+      delay: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction]
+    ) {
+      self.toolbarView.alpha = 1
+      self.screenSkeletonView.alpha = 1
+    }
   }
 
   private func handleSwipeReset() {
@@ -91,6 +125,7 @@ class GameViewController: UIViewController {
     gridButton.accessibilityLabel = "Grid skeleton"
     updateGridButtonAppearance()
     gridButton.addAction(UIAction { [weak self] _ in
+      self?.gameBoardView.revealFirstPlayerSelection()
       self?.toggleGridSkeleton()
     }, for: .touchUpInside)
     toolbarView.addSubview(gridButton)
@@ -99,6 +134,7 @@ class GameViewController: UIViewController {
     fontButton.accessibilityLabel = "Dot font"
     updateFontButtonAppearance()
     fontButton.addAction(UIAction { [weak self] _ in
+      self?.gameBoardView.revealFirstPlayerSelection()
       self?.cycleFont()
     }, for: .touchUpInside)
     toolbarView.addSubview(fontButton)
@@ -226,18 +262,19 @@ class GameViewController: UIViewController {
 
   private func resetPlayers(layout: PlayerLayout) {
     currentLayout = layout
-    players = (0..<layout.count).map { Player(id: $0, lifeTotal: Player.defaultLife) }
+    let startingLife = layout == .two ? 20 : Player.defaultLife
+    players = (0..<layout.count).map { Player(id: $0, lifeTotal: startingLife) }
     gameBoardView.configure(layout: layout, players: players)
   }
 
   private func startGame(with layout: PlayerLayout) {
     resetPlayers(layout: layout)
-    // Push the freshly-built cells off-screen *now*, before the selector
-    // starts fading. Otherwise they paint at full opacity behind the
-    // transparent selector for the duration of the fade, then snap off
-    // when the wipe begins — a visible "flash" of the new numbers.
-    gameBoardView.playWipeIn()
-    hideLayoutSelector(animated: true)
+    // Establish the dimmed starting state before the transparent selector
+    // fades, then begin the lighthouse sweep once the board is fully visible.
+    gameBoardView.prepareFirstPlayerSelection()
+    hideLayoutSelector(animated: true) { [weak self] in
+      self?.gameBoardView.playFirstPlayerSelection()
+    }
   }
 
   private func showLayoutSelector(animated: Bool) {
@@ -296,19 +333,23 @@ class GameViewController: UIViewController {
     overlayView.prepare(
       lifeTotal: player.lifeTotal,
       commanderDamage: player.commanderDamage,
-      counters: player.counters,
+      seatColors: player.seatColors,
+      colorSeed: player.id,
       rotation: rotation
     )
 
     let overlayCenter = overlayView.convert(cellVisualCenter, from: view)
-    overlayView.placeDotNumberView(visualCenter: overlayCenter, sourceDotSize: cellDotSize)
+    overlayView.prepareDotNumberViewHero(
+      visualCenter: overlayCenter,
+      sourceDotSize: cellDotSize
+    )
+    overlayView.animateDotNumberViewHeroToFinal()
 
     UIView.animate(
       withDuration: 0.45, delay: 0,
       usingSpringWithDamping: 0.85, initialSpringVelocity: 0,
       options: .curveEaseOut
     ) {
-      self.overlayView.resetDotNumberViewToFinal()
       self.overlayView.presentChrome()
       self.toolbarView.alpha = 0
     }
@@ -320,15 +361,14 @@ class GameViewController: UIViewController {
 
     players[index].lifeTotal = result.lifeTotal
     players[index].commanderDamage = result.commanderDamage
-    players[index].counters = result.counters
+    players[index].seatColors = result.seatColors
     gameBoardView.updatePlayer(at: index, lifeTotal: result.lifeTotal)
-    gameBoardView.applyPlayerBadges(from: players)
+    gameBoardView.updateSeatColors(
+      at: index,
+      colors: result.seatColors,
+      seed: players[index].id
+    )
     editingIndex = nil
-
-    // Make the badge bar visible-but-transparent so it can fade in
-    // alongside the overlay dismissal instead of snapping in at the end.
-    cell.badgeBar.isHidden = false
-    cell.badgeBar.alpha = 0
 
     let cellDotView = cell.dotNumberView
     let cellVisualCenter = view.convert(
@@ -337,15 +377,18 @@ class GameViewController: UIViewController {
     )
     let cellDotSize = cellDotView.actualDotSize
     let overlayCenter = overlayView.convert(cellVisualCenter, from: view)
+    overlayView.animateDotNumberViewHeroToSource(
+      visualCenter: overlayCenter,
+      sourceDotSize: cellDotSize
+    )
 
     UIView.animate(
-      withDuration: 0.4, delay: 0,
+      withDuration: LifeInputOverlay.dotHeroAnimationDuration,
+      delay: 0,
       usingSpringWithDamping: 0.9, initialSpringVelocity: 0,
       options: .curveEaseInOut,
       animations: {
         self.gameBoardView.setAllAlphas(1)
-        cell.badgeBar.alpha = 1
-        self.overlayView.placeDotNumberView(visualCenter: overlayCenter, sourceDotSize: cellDotSize)
         self.overlayView.dismissChrome()
         self.toolbarView.alpha = 1
       },
@@ -355,5 +398,16 @@ class GameViewController: UIViewController {
         self.overlayView.resetDotNumberViewToFinal()
       }
     )
+  }
+}
+
+private final class GameInteractionView: UIView {
+  var onInteraction: (() -> Void)?
+
+  override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    if event != nil {
+      onInteraction?()
+    }
+    return super.hitTest(point, with: event)
   }
 }

@@ -1,9 +1,13 @@
 import UIKit
 
 class DotNumberView: UIView {
+  static let editHeroTotalDuration = DotDigitView.editHeroTotalDuration
+
   private var digitViews: [DotDigitView] = []
   private(set) var number: Int = 0
   var maxDotSize: CGFloat?
+  private(set) var seatColors: Set<SeatColor> = [.colorless]
+  private(set) var colorSeed = 0
 
   /// Gap between dots, as a fraction of dot diameter. 2 / 18 gives a 2pt gap
   /// at the board's 18pt target dot size, and scales with the dot otherwise.
@@ -15,6 +19,8 @@ class DotNumberView: UIView {
   private var lastLayoutSize: CGSize = .zero
   private var lastMaxDotSize: CGFloat?
   private var lastFontID: String?
+  private var editHeroDirection: CGPoint?
+  private var editHeroProjectionRange: ClosedRange<CGFloat>?
   /// Font id the current `digitViews` were built against, so `updateNumber`
   /// can detect a font change and rebuild at the new glyph dimensions.
   private var builtFontID: String?
@@ -52,6 +58,19 @@ class DotNumberView: UIView {
     let rows = CGFloat(DotPatterns.rows)
       + CGFloat(DotPatterns.rows - 1) * spacingRatio
     return min(size.width / cols, size.height / rows)
+  }
+
+  func setSeatColors(_ colors: Set<SeatColor>, seed: Int, animated: Bool) {
+    seatColors = colors.isEmpty ? [.colorless] : colors
+    colorSeed = seed
+    let orderedColors = SeatColor.allCases.filter { seatColors.contains($0) }
+    for (index, digitView) in digitViews.enumerated() {
+      digitView.setSeatColors(
+        orderedColors,
+        seed: colorSeed &+ index &* 104_729,
+        animated: animated
+      )
+    }
   }
 
   func updateNumber(_ newNumber: Int, direction: ChangeDirection?, animated: Bool) {
@@ -103,9 +122,15 @@ class DotNumberView: UIView {
     var x = (bounds.width - totalW) / 2
     let y = (bounds.height - digitH) / 2
 
-    for _ in digits {
+    let orderedColors = SeatColor.allCases.filter { seatColors.contains($0) }
+    for index in digits.indices {
       let dv = DotDigitView()
       dv.configure(dotSize: dotSz, spacing: spc)
+      dv.setSeatColors(
+        orderedColors,
+        seed: colorSeed &+ index &* 104_729,
+        animated: false
+      )
       dv.frame = CGRect(x: x, y: y, width: dv.contentWidth, height: dv.contentHeight)
       addSubview(dv)
       digitViews.append(dv)
@@ -117,6 +142,138 @@ class DotNumberView: UIView {
     for (i, digit) in digits.enumerated() where i < digitViews.count {
       digitViews[i].setDigit(digit, direction: direction, animated: animated)
     }
+  }
+
+  /// Match shake energy to the accumulated +/- value shown beside the number.
+  /// The squared logarithmic curve gives +1 a noticeable initial kick while
+  /// letting larger net changes become emphatic without growing without bound.
+  func shakeForChange(magnitude: Int, origin: CGPoint? = nil) {
+    guard magnitude > 0 else { return }
+    let referenceMagnitude: CGFloat = 20
+    let logarithmicProgress = log2(CGFloat(magnitude) + 1)
+      / log2(referenceMagnitude + 1)
+    let normalizedMagnitude = min(1, logarithmicProgress)
+    let intensity = 0.10 + pow(normalizedMagnitude, 2) * 0.80
+    guard let origin else {
+      shake(normalizedIntensity: intensity)
+      return
+    }
+
+    let centers = digitViews.flatMap { $0.activeDotCenters(in: self) }
+    let maximumDistance = centers.map {
+      hypot($0.x - origin.x, $0.y - origin.y)
+    }.max() ?? 0
+    for digitView in digitViews {
+      digitView.rippleShake(
+        normalizedIntensity: intensity,
+        in: self,
+        origin: origin,
+        maximumDistance: maximumDistance
+      )
+    }
+  }
+
+  func shakeForFirstPlayerLanding() {
+    shake(normalizedIntensity: 0.9)
+  }
+
+  private func shake(normalizedIntensity: CGFloat) {
+    for digitView in digitViews {
+      digitView.shake(normalizedIntensity: normalizedIntensity)
+    }
+  }
+
+  func prepareEditHero(from sourceCenter: CGPoint, sourceDotSize: CGFloat) {
+    layoutIfNeeded()
+    let targetDotSize = actualDotSize
+    guard targetDotSize > 0 else { return }
+
+    let destinationCenter = CGPoint(x: bounds.midX, y: bounds.midY)
+    let movement = CGPoint(
+      x: destinationCenter.x - sourceCenter.x,
+      y: destinationCenter.y - sourceCenter.y
+    )
+    let movementLength = hypot(movement.x, movement.y)
+    let direction = movementLength > 0.001
+      ? CGPoint(x: movement.x / movementLength, y: movement.y / movementLength)
+      : CGPoint(x: 1, y: 0)
+    let centers = digitViews.flatMap { $0.activeDotCenters(in: self) }
+    let projections = centers.map { $0.x * direction.x + $0.y * direction.y }
+    guard let minimumProjection = projections.min(),
+        let maximumProjection = projections.max() else { return }
+
+    let sourceScale = sourceDotSize / targetDotSize
+    for digitView in digitViews {
+      digitView.prepareEditHero(
+        in: self,
+        sourceCenter: sourceCenter,
+        destinationCenter: destinationCenter,
+        sourceScale: sourceScale
+      )
+    }
+    editHeroDirection = direction
+    editHeroProjectionRange = minimumProjection...maximumProjection
+  }
+
+  func animateEditHeroToFinal() {
+    guard let editHeroDirection,
+        let editHeroProjectionRange else { return }
+    for digitView in digitViews {
+      digitView.animateEditHero(
+        in: self,
+        direction: editHeroDirection,
+        minimumProjection: editHeroProjectionRange.lowerBound,
+        maximumProjection: editHeroProjectionRange.upperBound
+      )
+    }
+    self.editHeroDirection = nil
+    self.editHeroProjectionRange = nil
+  }
+
+  func animateEditHeroToSource(
+    at sourceCenter: CGPoint,
+    sourceDotSize: CGFloat
+  ) {
+    layoutIfNeeded()
+    let editorDotSize = actualDotSize
+    guard editorDotSize > 0 else { return }
+
+    let editorCenter = CGPoint(x: bounds.midX, y: bounds.midY)
+    let movement = CGPoint(
+      x: sourceCenter.x - editorCenter.x,
+      y: sourceCenter.y - editorCenter.y
+    )
+    let movementLength = hypot(movement.x, movement.y)
+    let direction = movementLength > 0.001
+      ? CGPoint(x: movement.x / movementLength, y: movement.y / movementLength)
+      : CGPoint(x: 1, y: 0)
+    let centers = digitViews.flatMap { $0.activeDotCenters(in: self) }
+    let projections = centers.map { $0.x * direction.x + $0.y * direction.y }
+    guard let minimumProjection = projections.min(),
+        let maximumProjection = projections.max() else { return }
+
+    let sourceScale = sourceDotSize / editorDotSize
+    for digitView in digitViews {
+      digitView.animateEditHeroToSource(
+        in: self,
+        sourceCenter: sourceCenter,
+        editorCenter: editorCenter,
+        sourceScale: sourceScale,
+        direction: direction,
+        minimumProjection: minimumProjection,
+        maximumProjection: maximumProjection
+      )
+    }
+    editHeroDirection = nil
+    editHeroProjectionRange = nil
+  }
+
+  func finishEditHero() {
+    for digitView in digitViews {
+      digitView.finishEditHero()
+    }
+    editHeroDirection = nil
+    editHeroProjectionRange = nil
   }
 
   var actualDotSize: CGFloat {
@@ -173,6 +330,48 @@ class DotNumberView: UIView {
   func resetSweep(animated: Bool) {
     for dv in digitViews {
       dv.resetSweep(animated: animated)
+    }
+  }
+
+  func applyClockwiseBeam(
+    in reference: UIView,
+    origin: CGPoint,
+    from startAngle: CGFloat,
+    to endAngle: CGFloat,
+    beamHalfWidth: CGFloat,
+    dimAlpha: CGFloat,
+    dimScale: CGFloat,
+    peakScale: CGFloat
+  ) {
+    for digitView in digitViews {
+      digitView.applyClockwiseBeam(
+        in: reference,
+        origin: origin,
+        from: startAngle,
+        to: endAngle,
+        beamHalfWidth: beamHalfWidth,
+        dimAlpha: dimAlpha,
+        dimScale: dimScale,
+        peakScale: peakScale
+      )
+    }
+  }
+
+  func setFirstPlayerEmphasis(
+    alpha: CGFloat,
+    scale: CGFloat,
+    animated: Bool,
+    duration: TimeInterval,
+    usesSpring: Bool = true
+  ) {
+    for digitView in digitViews {
+      digitView.setFirstPlayerEmphasis(
+        alpha: alpha,
+        scale: scale,
+        animated: animated,
+        duration: duration,
+        usesSpring: usesSpring
+      )
     }
   }
 

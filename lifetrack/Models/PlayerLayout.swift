@@ -12,10 +12,9 @@ import Foundation
 /// - `rotationDegrees`: how the cell's content is rotated so the player at this
 ///   seat reads the screen right-side-up. 0 = bottom-edge player, 180 = top,
 ///   90 = left, -90 = right.
-/// - `clockwiseIndex`: position in the clockwise-from-12-o'clock stagger used
-///   by `GameBoardView.playWipeIn()`. 0 fires first, then `1`, then `2`, etc.
-///   Hand-tuned per layout so the roll-in walks "around the table" in the
-///   physical order players sit, regardless of seat-id (SVG) order.
+/// - `clockwiseIndex`: hand-tuned physical clockwise seat-order metadata.
+///   Dot-level lighthouse motion uses projected dot angles directly, but this
+///   remains the canonical ordering for any discrete seat sequence.
 struct PlayerSeat {
   let iconCenter: CGPoint
   let cellRect: CGRect

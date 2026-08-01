@@ -6,12 +6,9 @@ class PlayerCellView: UIView {
   static let contentInset: CGFloat = 12
   /// Top/bottom content margin in the player's reading frame.
   static let verticalInset: CGFloat = 8
-  /// Fixed height of the commander-damage band (and its tap boxes), pinned to
-  /// the player's near edge just inside the bottom margin. The dot number area
-  /// flexes to fill whatever height remains above it.
-  static let commanderBandHeight: CGFloat = 44
-  /// Width of the center "tap to edit" zone, centered on the number: 5 dots on
-  /// the 20pt grid (18pt dot + padding). The ± zones fill the rest of the cell.
+  /// Width of the center interaction zone, centered on the number: 5 dots on
+  /// the 20pt grid (18pt dot + padding). A tap opens commander damage, while a
+  /// hold opens exact life input. The ± zones fill the rest of the cell.
   static let editZoneWidth: CGFloat = 100
 
   /// ± adjust-direction icons flanking the life total (minus on the player's
@@ -45,7 +42,6 @@ class PlayerCellView: UIView {
   var isBeingEdited: Bool = false {
     didSet {
       dotNumberView.isHidden = isBeingEdited
-      badgeBar.isHidden = isBeingEdited
       minusIcon.isHidden = isBeingEdited
       plusIcon.isHidden = isBeingEdited
       deltaView.isHidden = isBeingEdited
@@ -54,16 +50,15 @@ class PlayerCellView: UIView {
   }
 
   private let contentContainer = UIView()
+  private let numberPressContainer = UIView()
   let dotNumberView = DotNumberView()
-  let badgeBar = PlayerCellBadgeBar()
   private let minusIcon = UIImageView()
   private let plusIcon = UIImageView()
-  /// The net-change readout uses the same rolling `numericText` transition as
-  /// the badges (`RollingCounterText` driven by `CounterValueModel`), hosted in
-  /// UIKit. `deltaView` is the hosting controller's view; `deltaModel.value`
-  /// holds the current magnitude.
-  private let deltaModel = CounterValueModel()
-  private lazy var deltaHost = UIHostingController(rootView: RollingCounterText(model: deltaModel))
+  /// The net-change readout uses a hosted SwiftUI `numericText` transition.
+  /// `deltaView` is the hosting controller's view; `deltaModel.value` holds the
+  /// current magnitude.
+  private let deltaModel = RollingValueModel()
+  private lazy var deltaHost = UIHostingController(rootView: RollingNumberText(model: deltaModel))
   private var deltaView: UIView { deltaHost.view }
   private var sessionDelta = 0
   private var deltaIdleTimer: Timer?
@@ -72,10 +67,12 @@ class PlayerCellView: UIView {
   private var repeatTimer: Timer?
   private var centerHoldTimer: Timer?
   private var isTouching = false
+  private var didActivateCenterHold = false
 
   private static let holdActivationDelay: TimeInterval = 0.5
   private static let repeatInterval: TimeInterval = 0.35
   private static let bulkChangeMagnitude = 10
+  private static let pressedNumberScale: CGFloat = 0.95
 
   private static let lifeChangeHaptic = UIImpactFeedbackGenerator(style: .light)
   private static let bulkChangeHaptic = UIImpactFeedbackGenerator(style: .medium)
@@ -102,11 +99,8 @@ class PlayerCellView: UIView {
   private func setup() {
     contentContainer.isUserInteractionEnabled = false
     addSubview(contentContainer)
-    contentContainer.addSubview(dotNumberView)
-    contentContainer.addSubview(badgeBar)
-    badgeBar.onCommanderRequested = { [weak self] in
-      self?.onCommanderModeRequested?()
-    }
+    contentContainer.addSubview(numberPressContainer)
+    numberPressContainer.addSubview(dotNumberView)
     configureAdjustIcon(minusIcon, named: "IconMinus")
     configureAdjustIcon(plusIcon, named: "IconPlus")
 
@@ -141,15 +135,14 @@ class PlayerCellView: UIView {
       contentContainer.transform = .identity
       contentContainer.bounds = CGRect(x: 0, y: 0, width: contentW, height: contentH)
       contentContainer.center = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
+      numberPressContainer.bounds = contentContainer.bounds
+      numberPressContainer.center = CGPoint(
+        x: contentContainer.bounds.midX,
+        y: contentContainer.bounds.midY
+      )
     }
 
-    // 44pt commander band pinned to the bottom (near edge); the dot number
-    // area flexes to fill the rest above it.
-    let badgeRowH = min(Self.commanderBandHeight, contentH)
-    let dotH = contentH - badgeRowH
-
-    dotNumberView.frame = CGRect(x: 0, y: 0, width: contentW, height: dotH)
-    badgeBar.frame = CGRect(x: 0, y: dotH, width: contentW, height: badgeRowH)
+    dotNumberView.frame = numberPressContainer.bounds
 
     // ± icons flank the rendered number (minus left, plus right), vertically
     // centered on it, with a fixed 20pt gap — placed in the rotated content
@@ -194,24 +187,90 @@ class PlayerCellView: UIView {
     }
   }
 
-  /// Height reserved for the commander-damage band below the life total, given
-  /// the content height. Fixed at `commanderBandHeight` (clamped so it never
-  /// exceeds the content). Exposed statically so GameBoardView can subtract it
-  /// when computing dot sizes.
-  static func badgeRowHeight(forContentHeight contentH: CGFloat) -> CGFloat {
-    min(commanderBandHeight, contentH)
-  }
-
-  func setLifeTotal(_ value: Int, direction: ChangeDirection?, animated: Bool) {
+  func setLifeTotal(
+    _ value: Int,
+    direction: ChangeDirection?,
+    animated: Bool,
+    shakes: Bool = true
+  ) {
+    let magnitude = abs(value - lifeTotal)
     lifeTotal = value
     changeDirection = direction
     dotNumberView.updateNumber(value, direction: direction, animated: animated)
+    if animated, shakes, magnitude > 0 {
+      dotNumberView.shakeForChange(magnitude: magnitude)
+    }
     updateCommanderAccessibility()
   }
 
-  /// Configures the footer's non-commander life counters.
-  func setBadges(counters: [LifeCounter: Int]) {
-    badgeBar.configure(counters: counters)
+  func setSeatColors(_ colors: Set<SeatColor>, seed: Int, animated: Bool) {
+    dotNumberView.setSeatColors(colors, seed: seed, animated: animated)
+  }
+
+  func shakeFirstPlayerLanding() {
+    dotNumberView.shakeForFirstPlayerLanding()
+  }
+
+  func applyFirstPlayerBeam(
+    in reference: UIView,
+    origin: CGPoint,
+    from startAngle: CGFloat,
+    to endAngle: CGFloat,
+    beamHalfWidth: CGFloat,
+    dimAlpha: CGFloat,
+    dimScale: CGFloat,
+    peakScale: CGFloat
+  ) {
+    dotNumberView.applyClockwiseBeam(
+      in: reference,
+      origin: origin,
+      from: startAngle,
+      to: endAngle,
+      beamHalfWidth: beamHalfWidth,
+      dimAlpha: dimAlpha,
+      dimScale: dimScale,
+      peakScale: peakScale
+    )
+  }
+
+  func setFirstPlayerEmphasis(
+    alpha: CGFloat,
+    scale: CGFloat,
+    animated: Bool,
+    duration: TimeInterval,
+    usesSpring: Bool = true
+  ) {
+    dotNumberView.setFirstPlayerEmphasis(
+      alpha: alpha,
+      scale: scale,
+      animated: animated,
+      duration: duration,
+      usesSpring: usesSpring
+    )
+  }
+
+  func setFirstPlayerChromeVisible(_ visible: Bool, animated: Bool) {
+    if !visible {
+      cancelDeltaSession()
+    }
+    let changes = {
+      self.minusIcon.alpha = visible ? Self.adjustIconAlpha : 0
+      self.plusIcon.alpha = visible ? Self.adjustIconAlpha : 0
+      self.deltaView.alpha = 0
+    }
+
+    if animated {
+      UIView.animate(
+        withDuration: 0.22,
+        delay: 0,
+        usingSpringWithDamping: 0.9,
+        initialSpringVelocity: 0,
+        options: [.beginFromCurrentState, .allowUserInteraction],
+        animations: changes
+      )
+    } else {
+      changes()
+    }
   }
 
   func prepareLifeDisplay(_ value: Int, rotation: CGFloat) {
@@ -219,12 +278,24 @@ class PlayerCellView: UIView {
     self.rotation = rotation
     lifeTotal = value
     dotNumberView.alpha = 1
-    dotNumberView.isAccessibilityElement = false
-    dotNumberView.accessibilityCustomActions = nil
-    badgeBar.isHidden = false
+    dotNumberView.isAccessibilityElement = true
+    dotNumberView.accessibilityIdentifier = "life-total"
+    dotNumberView.accessibilityHint =
+      "Tap the center for commander damage. Hold the center to edit life total."
+    dotNumberView.accessibilityCustomActions = [
+      UIAccessibilityCustomAction(name: "Commander damage") { [weak self] _ in
+        self?.onCommanderModeRequested?()
+        return true
+      },
+      UIAccessibilityCustomAction(name: "Edit life total") { [weak self] _ in
+        self?.onEditRequested?()
+        return true
+      },
+    ]
     minusIcon.isHidden = false
     plusIcon.isHidden = false
     dotNumberView.updateNumber(value, direction: nil, animated: false)
+    updateCommanderAccessibility()
     setNeedsLayout()
     layoutIfNeeded()
   }
@@ -251,7 +322,6 @@ class PlayerCellView: UIView {
         return true
       },
     ]
-    badgeBar.isHidden = true
     minusIcon.isHidden = false
     plusIcon.isHidden = false
     cancelDeltaSession()
@@ -275,7 +345,6 @@ class PlayerCellView: UIView {
         return true
       },
     ]
-    badgeBar.isHidden = true
     minusIcon.isHidden = true
     plusIcon.isHidden = true
     cancelDeltaSession()
@@ -285,14 +354,17 @@ class PlayerCellView: UIView {
     layoutIfNeeded()
   }
 
+  @discardableResult
   func animateRippleOut(
     in reference: UIView,
     origin: CGPoint,
     maximumDistance: CGFloat,
     reversed: Bool
-  ) {
+  ) -> UIView {
     cancelDeltaSession()
-    dotNumberView.animateRippleOut(
+    let outgoingNumber = makeTransitionNumber(in: reference)
+    dotNumberView.snapToOff()
+    outgoingNumber.animateRippleOut(
       in: reference,
       origin: origin,
       maximumDistance: maximumDistance,
@@ -303,10 +375,57 @@ class PlayerCellView: UIView {
       delay: 0,
       options: [.beginFromCurrentState, .allowUserInteraction]
     ) {
-      self.badgeBar.alpha = 0
       self.minusIcon.alpha = 0
       self.plusIcon.alpha = 0
     }
+    return outgoingNumber
+  }
+
+  private func makeTransitionNumber(in reference: UIView) -> DotNumberView {
+    layoutIfNeeded()
+
+    let outgoingNumber = DotNumberView()
+    outgoingNumber.bounds = dotNumberView.bounds
+    outgoingNumber.maxDotSize = dotNumberView.maxDotSize
+    outgoingNumber.setSeatColors(
+      dotNumberView.seatColors,
+      seed: dotNumberView.colorSeed,
+      animated: false
+    )
+    outgoingNumber.updateNumber(
+      dotNumberView.number,
+      direction: nil,
+      animated: false
+    )
+    outgoingNumber.layoutIfNeeded()
+    outgoingNumber.alpha = dotNumberView.alpha
+
+    let sourceCenter = CGPoint(
+      x: dotNumberView.bounds.midX,
+      y: dotNumberView.bounds.midY
+    )
+    let center = reference.convert(sourceCenter, from: dotNumberView)
+    let xAxis = reference.convert(
+      CGPoint(x: sourceCenter.x + 1, y: sourceCenter.y),
+      from: dotNumberView
+    )
+    let yAxis = reference.convert(
+      CGPoint(x: sourceCenter.x, y: sourceCenter.y + 1),
+      from: dotNumberView
+    )
+
+    outgoingNumber.center = center
+    outgoingNumber.transform = CGAffineTransform(
+      a: xAxis.x - center.x,
+      b: xAxis.y - center.y,
+      c: yAxis.x - center.x,
+      d: yAxis.y - center.y,
+      tx: 0,
+      ty: 0
+    )
+    outgoingNumber.isUserInteractionEnabled = false
+    reference.addSubview(outgoingNumber)
+    return outgoingNumber
   }
 
   func animateRecipientFocus() {
@@ -317,7 +436,6 @@ class PlayerCellView: UIView {
       options: [.beginFromCurrentState, .allowUserInteraction]
     ) {
       self.dotNumberView.alpha = Self.adjustIconAlpha
-      self.badgeBar.alpha = 0
       self.minusIcon.alpha = 0
       self.plusIcon.alpha = 0
     }
@@ -325,7 +443,6 @@ class PlayerCellView: UIView {
 
   func animateRecipientRestore() {
     dotNumberView.alpha = Self.adjustIconAlpha
-    badgeBar.alpha = 0
     minusIcon.alpha = 0
     plusIcon.alpha = 0
     UIView.animate(
@@ -334,7 +451,6 @@ class PlayerCellView: UIView {
       options: [.beginFromCurrentState, .allowUserInteraction]
     ) {
       self.dotNumberView.alpha = 1
-      self.badgeBar.alpha = 1
       self.minusIcon.alpha = Self.adjustIconAlpha
       self.plusIcon.alpha = Self.adjustIconAlpha
     }
@@ -361,9 +477,6 @@ class PlayerCellView: UIView {
       delay: 0,
       options: [.beginFromCurrentState, .allowUserInteraction]
     ) {
-      if self.displayMode == .life {
-        self.badgeBar.alpha = 1
-      }
       if self.displayMode != .commanderRecipient {
         self.minusIcon.alpha = Self.adjustIconAlpha
         self.plusIcon.alpha = Self.adjustIconAlpha
@@ -371,15 +484,7 @@ class PlayerCellView: UIView {
     }
   }
 
-  /// Hit target of the commander-mode entry band in `view` coordinates.
-  func commanderHitRects(in view: UIView) -> [CGRect] {
-    layoutIfNeeded()
-    return [convert(commanderHitRectInBounds(), to: view)]
-  }
-
-  /// The life-tap region above the full commander band, in `view`'s coordinate
-  /// space. This intentionally follows the cell bounds, not the inset dot view,
-  /// so the skeleton matches the full hit surface.
+  /// The full cell interaction region in `view` coordinates.
   func lifeTapAreaRect(in view: UIView) -> CGRect {
     layoutIfNeeded()
     return convert(lifeTapAreaRectInBounds(), to: view)
@@ -387,19 +492,11 @@ class PlayerCellView: UIView {
 
   // MARK: - Touch handling
 
-  /// The footer lives inside the rotated, non-interactive content container, so
-  /// route its full near-edge band to the visible COMMANDER control manually.
-  override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-    if !isBeingEdited, displayMode == .life,
-       commanderHitRectInBounds().contains(point) {
-      return badgeBar.commanderButton
-    }
-    return super.hitTest(point, with: event)
-  }
-
   override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
     guard !isTouching, let touch = touches.first else { return }
     isTouching = true
+    didActivateCenterHold = false
+    setNumberPressed(true)
     let loc = touch.location(in: self)
     if displayMode == .commanderRecipient {
       if tapZone(at: loc) == .center {
@@ -412,9 +509,9 @@ class PlayerCellView: UIView {
 
     switch zone {
     case .left:
-      // Commit ±1 on touch-down (like the badge controls) so rapid tapping
-      // responds to each strike, not each lift. A held press then escalates
-      // to the ±10 repeat after holdActivationDelay.
+      // Commit ±1 on touch-down so rapid tapping responds to each strike, not
+      // each lift. A held press then escalates to the ±10 repeat after
+      // holdActivationDelay.
       applyChange(increment: false, magnitude: 1, bulk: false)
       scheduleBulkRepeat(increment: false)
     case .right:
@@ -425,15 +522,24 @@ class PlayerCellView: UIView {
         endTouch()
         return
       }
-      centerHoldTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+      centerHoldTimer = Timer.scheduledTimer(
+        withTimeInterval: Self.holdActivationDelay,
+        repeats: false
+      ) { [weak self] _ in
+        guard let self else { return }
+        self.didActivateCenterHold = true
         Self.editActivationHaptic.impactOccurred(intensity: 0.9)
-        self?.onEditRequested?()
-        self?.centerHoldTimer = nil
+        self.onEditRequested?()
+        self.centerHoldTimer = nil
       }
     }
   }
 
   override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+    if displayMode == .life, !didActivateCenterHold, let touch = touches.first,
+       tapZone(at: touch.location(in: self)) == .center {
+      onCommanderModeRequested?()
+    }
     endTouch()
   }
 
@@ -463,39 +569,38 @@ class PlayerCellView: UIView {
     repeatTimer = nil
     centerHoldTimer?.invalidate()
     centerHoldTimer = nil
+    setNumberPressed(false)
     isTouching = false
+    didActivateCenterHold = false
+  }
+
+  private func setNumberPressed(_ isPressed: Bool) {
+    let scale = isPressed ? Self.pressedNumberScale : 1
+    if isPressed {
+      UIView.animate(
+        withDuration: 0.12,
+        delay: 0,
+        options: [.allowUserInteraction, .beginFromCurrentState, .curveEaseOut]
+      ) {
+        self.numberPressContainer.transform = CGAffineTransform(scaleX: scale, y: scale)
+      }
+    } else {
+      UIView.animate(
+        withDuration: 0.24,
+        delay: 0,
+        usingSpringWithDamping: 0.72,
+        initialSpringVelocity: 0,
+        options: [.allowUserInteraction, .beginFromCurrentState]
+      ) {
+        self.numberPressContainer.transform = .identity
+      }
+    }
   }
 
   // MARK: - Helpers
 
   private func lifeTapAreaRectInBounds() -> CGRect {
-    let band = min(Self.commanderBandHeight, abs(Int(rotation)) == 90 ? bounds.width : bounds.height)
-    switch Int(rotation) {
-    case 90:
-      return CGRect(x: band, y: 0, width: max(0, bounds.width - band), height: bounds.height)
-    case -90:
-      return CGRect(x: 0, y: 0, width: max(0, bounds.width - band), height: bounds.height)
-    case 180, -180:
-      return CGRect(x: 0, y: band, width: bounds.width, height: max(0, bounds.height - band))
-    default:
-      return CGRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - band))
-    }
-  }
-
-  private func commanderHitRectInBounds() -> CGRect {
-    let swapped = abs(Int(rotation)) == 90
-    let axisLen = swapped ? bounds.height : bounds.width
-    let band = min(Self.commanderBandHeight, swapped ? bounds.width : bounds.height)
-    switch Int(rotation) {
-    case 90:
-      return CGRect(x: 0, y: 0, width: band, height: axisLen)
-    case -90:
-      return CGRect(x: bounds.width - band, y: 0, width: band, height: axisLen)
-    case 180, -180:
-      return CGRect(x: 0, y: 0, width: axisLen, height: band)
-    default:
-      return CGRect(x: 0, y: bounds.height - band, width: axisLen, height: band)
-    }
+    bounds
   }
 
   private func playerFraction(at location: CGPoint) -> CGFloat {
@@ -508,8 +613,8 @@ class PlayerCellView: UIView {
     }
   }
 
-  /// The center (edit) zone is a fixed `editZoneWidth`-wide band centered on the
-  /// number; the ± zones stretch to fill the rest of the cell on each side.
+  /// The center interaction zone is a fixed `editZoneWidth`-wide band centered
+  /// on the number; the ± zones stretch to fill the rest of the cell.
   private func tapZone(at location: CGPoint) -> TapZone {
     let swapped = abs(Int(rotation)) == 90
     let axisPos = swapped ? location.y : location.x
@@ -529,12 +634,20 @@ class PlayerCellView: UIView {
       guard applied != 0 else { return }
       lifeTotal = next
       dotNumberView.updateNumber(lifeTotal, direction: changeDirection, animated: true)
-      registerDelta(applied)
+      let netDelta = registerDelta(applied)
+      dotNumberView.shakeForChange(
+        magnitude: abs(netDelta),
+        origin: adjustmentRippleOrigin(increment: increment)
+      )
       onCommanderDamageAdjust?(applied)
     } else {
       lifeTotal += requested
       dotNumberView.updateNumber(lifeTotal, direction: changeDirection, animated: true)
-      registerDelta(requested)
+      let netDelta = registerDelta(requested)
+      dotNumberView.shakeForChange(
+        magnitude: abs(netDelta),
+        origin: adjustmentRippleOrigin(increment: increment)
+      )
       onLifeChanged?(lifeTotal)
     }
     if bulk {
@@ -544,10 +657,15 @@ class PlayerCellView: UIView {
     }
   }
 
+  private func adjustmentRippleOrigin(increment: Bool) -> CGPoint {
+    let icon = increment ? plusIcon : minusIcon
+    return dotNumberView.convert(icon.center, from: contentContainer)
+  }
+
   private func updateCommanderAccessibility() {
     switch displayMode {
     case .life:
-      break
+      dotNumberView.accessibilityLabel = "Life total, \(lifeTotal)"
     case .commanderSource:
       let playerNumber = dotNumberView.accessibilityIdentifier?
         .split(separator: "-")
@@ -565,10 +683,14 @@ class PlayerCellView: UIView {
   /// Accumulate a life change into the running session delta, surface the
   /// magnitude next to the active side's icon, brighten that icon, and (re)arm
   /// the idle fade. The minus icon slides over (animated) to make room.
-  private func registerDelta(_ amount: Int) {
+  @discardableResult
+  private func registerDelta(_ amount: Int) -> Int {
     sessionDelta += amount
     // Net zero — nothing to show; fade the session out as if it had idled.
-    guard sessionDelta != 0 else { endDeltaSession(); return }
+    guard sessionDelta != 0 else {
+      endDeltaSession()
+      return 0
+    }
 
     // Drive the magnitude through the model so the digits roll (numericText).
     deltaModel.value = abs(sessionDelta)
@@ -583,6 +705,7 @@ class PlayerCellView: UIView {
       self.minusIcon.alpha = positive ? Self.adjustIconAlpha : 1
     }
     scheduleDeltaIdle()
+    return sessionDelta
   }
 
   /// Width of the current magnitude, measured from the Karl `lifeDelta` font so
@@ -637,7 +760,7 @@ class PlayerCellView: UIView {
 
   // MARK: - Swipe-to-reset sweep
 
-  /// Apply the reset-swipe positional fade to this cell's dots and badge bar.
+  /// Apply the reset-swipe positional fade to this cell's dots and controls.
   /// Coordinates are in `reference`'s space (typically the GameBoardView).
   func applySweep(
     in reference: UIView,
@@ -660,7 +783,6 @@ class PlayerCellView: UIView {
       return max(0, min(1, ((leadingEdge - pos) * direction) / feather))
     }
 
-    badgeBar.alpha = 1 - progress(for: badgeBar)
     minusIcon.alpha = Self.adjustIconAlpha * (1 - progress(for: minusIcon))
     plusIcon.alpha = Self.adjustIconAlpha * (1 - progress(for: plusIcon))
     if sessionDelta != 0 {
@@ -674,24 +796,13 @@ class PlayerCellView: UIView {
       UIView.animate(withDuration: 0.3, delay: 0,
                usingSpringWithDamping: 0.9, initialSpringVelocity: 0,
                options: .beginFromCurrentState) {
-        self.badgeBar.alpha = 1
         self.minusIcon.alpha = Self.adjustIconAlpha
         self.plusIcon.alpha = Self.adjustIconAlpha
       }
     } else {
-      badgeBar.alpha = 1
       minusIcon.alpha = Self.adjustIconAlpha
       plusIcon.alpha = Self.adjustIconAlpha
     }
   }
 
-  /// Snap content to "off" (dots invisible, badge + icons hidden). Pair with
-  /// `resetSweep(animated: true)` to play the roll-in.
-  func snapToOff() {
-    dotNumberView.snapToOff()
-    cancelDeltaSession()
-    badgeBar.alpha = 0
-    minusIcon.alpha = 0
-    plusIcon.alpha = 0
-  }
 }
