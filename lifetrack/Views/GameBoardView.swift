@@ -8,14 +8,13 @@ class GameBoardView: UIView {
   var onCommanderModeExitRequested: (() -> Void)?
   /// Recipient index, source player id, and applied damage delta.
   var onCommanderDamageChanged: ((Int, Int, Int) -> Void)?
-  /// Fires when a swipe-to-reset gesture is committed. The caller is expected to
-  /// rebuild player state and start the first-player selection animation.
+  /// Fires when a swipe-to-reset gesture is committed. The caller clears player
+  /// state and presents the layout selector; choosing a layout later starts the
+  /// first-player selection animation.
   var onResetRequested: (() -> Void)?
   /// Reports whether the lighthouse itself is actively sweeping so
   /// controller-owned chrome can disappear without disabling its hit targets.
   var onFirstPlayerSweepActiveChanged: ((Bool) -> Void)?
-
-  private static let gap: CGFloat = BoardInsets.interCellGap
 
   /// Target dot diameter for the on-board life totals. Cells render at this
   /// size unless a cell is too small to fit it, in which case every cell
@@ -32,6 +31,8 @@ class GameBoardView: UIView {
   private static let firstPlayerSweepTurns: CGFloat = 8
   private static let firstPlayerSweepAccelerationExponent: CGFloat = 2.15
   private static let firstPlayerBeamHalfWidth: CGFloat = 0.32
+  private static let firstPlayerSweepStartPitch: Float = -600
+  private static let firstPlayerSweepEndPitch: Float = 1_200
 
   private enum FirstPlayerAnimationPhase {
     case idle
@@ -149,19 +150,24 @@ class GameBoardView: UIView {
     for (i, player) in players.enumerated() {
       let cell = PlayerCellView()
       cell.setSeatColors(player.seatColors, seed: player.id, animated: false)
-      cell.setLifeTotal(player.lifeTotal, direction: nil, animated: false)
+      cell.setPoisonCounters(player.poisonCounters, animated: false)
+      cell.setLifeTotal(
+        player.lifeTotal,
+        direction: nil,
+        animated: false,
+        hasLethalCommanderDamage: player.hasLethalCommanderDamage
+      )
       let idx = i
       cell.onEditRequested = { [weak self] in
         guard let self, idx < self.currentSlots.count else { return }
-        self.revealFirstPlayerSelection()
         self.onEditRequested?(idx, self.currentSlots[idx].rotationDegrees)
       }
       cell.onLifeChanged = { [weak self] newLife in
-        self?.revealFirstPlayerSelection()
-        self?.onLifeChanged?(idx, newLife)
+        guard let self else { return }
+        self.onLifeChanged?(idx, newLife)
+        self.setNeedsLayout()
       }
       cell.onCommanderModeRequested = { [weak self] in
-        self?.revealFirstPlayerSelection()
         self?.onCommanderModeRequested?(idx)
       }
       cell.onCommanderModeExitRequested = { [weak self] in
@@ -182,20 +188,29 @@ class GameBoardView: UIView {
     lifeTotal: Int,
     direction: ChangeDirection? = nil,
     animated: Bool = false,
-    shakes: Bool = true
+    shakes: Bool = true,
+    hasLethalCommanderDamage: Bool? = nil
   ) {
     guard index < cellViews.count else { return }
     cellViews[index].setLifeTotal(
       lifeTotal,
       direction: direction,
       animated: animated,
-      shakes: shakes
+      shakes: shakes,
+      hasLethalCommanderDamage: hasLethalCommanderDamage
     )
+    setNeedsLayout()
   }
 
   func updateSeatColors(at index: Int, colors: Set<SeatColor>, seed: Int) {
     guard cellViews.indices.contains(index) else { return }
     cellViews[index].setSeatColors(colors, seed: seed, animated: true)
+  }
+
+  func updatePoisonCounters(at index: Int, value: Int, animated: Bool) {
+    guard cellViews.indices.contains(index) else { return }
+    cellViews[index].setPoisonCounters(value, animated: animated)
+    setNeedsLayout()
   }
 
   /// Update the source damage total while focused commander mode is active.
@@ -211,6 +226,7 @@ class GameBoardView: UIView {
       direction: direction,
       animated: true
     )
+    setNeedsLayout()
   }
 
   func enterCommanderMode(recipientIndex: Int, players: [Player]) {
@@ -235,6 +251,10 @@ class GameBoardView: UIView {
   ) {
     layoutIfNeeded()
     guard let recipientCell = cellView(at: recipientIndex) else { return }
+    AppSoundPlayer.shared.play(
+      .commanderTransition,
+      pitch: entering ? AppSoundPlayer.modeEntryPitchShift : 0
+    )
     commanderTransitionGeneration += 1
     let generation = commanderTransitionGeneration
     commanderTransitionOverlays.forEach { $0.removeFromSuperview() }
@@ -279,6 +299,9 @@ class GameBoardView: UIView {
     DispatchQueue.main.asyncAfter(deadline: .now() + overlapDelay) { [weak self] in
       guard let self, generation == self.commanderTransitionGeneration else { return }
       let viewerRotation = self.layout.seats[recipientIndex].rotationDegrees
+      if !entering {
+        self.commanderRecipientIndex = nil
+      }
 
       for (index, cell) in self.cellViews.enumerated() where players.indices.contains(index) {
         if entering {
@@ -297,6 +320,7 @@ class GameBoardView: UIView {
         } else {
           cell.prepareLifeDisplay(
             players[index].lifeTotal,
+            hasLethalCommanderDamage: players[index].hasLethalCommanderDamage,
             rotation: self.layout.seats[index].rotationDegrees
           )
         }
@@ -304,6 +328,8 @@ class GameBoardView: UIView {
           cell.snapDotsToOff()
         }
       }
+      self.setNeedsLayout()
+      self.layoutIfNeeded()
 
       for (index, cell) in self.cellViews.enumerated() {
         if index == recipientIndex {
@@ -337,11 +363,20 @@ class GameBoardView: UIView {
   func setEditing(index: Int?) {
     for (i, cell) in cellViews.enumerated() {
       cell.isBeingEdited = (i == index)
+      if index != nil, i != index {
+        cell.setAdjustmentChromeVisible(false, animated: true)
+      }
     }
     UIView.animate(withDuration: 0.35, delay: 0, options: .curveEaseInOut) {
       for (i, cell) in self.cellViews.enumerated() {
         cell.alpha = (index == nil || i == index) ? 1 : 0
       }
+    }
+  }
+
+  func restoreNoneditedAdjustmentChrome(excluding index: Int) {
+    for (i, cell) in cellViews.enumerated() where i != index {
+      cell.setAdjustmentChromeVisible(true, animated: true)
     }
   }
 
@@ -370,14 +405,16 @@ class GameBoardView: UIView {
     for (i, cell) in cellViews.enumerated() {
       guard i < slots.count else { break }
       let slot = slots[i]
-      let rotation = commanderRecipientIndex.map {
-        layout.seats[$0].rotationDegrees
-      } ?? slot.rotationDegrees
-      cell.rotation = rotation
+      // Life totals keep their seat rotations during ripple-out. Once focused
+      // commander content is prepared, each cell sets its own content-specific
+      // rotation: source damage faces the recipient while recipient life stays
+      // at its normal seat angle.
+      if commanderRecipientIndex == nil {
+        cell.rotation = slot.rotationDegrees
+      }
       cell.maxDotSize = dotSize
       cell.frame = slot.frame
     }
-
     updateSkeleton(slots: slots)
   }
 
@@ -402,28 +439,13 @@ class GameBoardView: UIView {
     }
     skeletonShape.path = path.cgPath
 
-    // Tap targets tile each cell with no gaps/overlap. The center interaction
-    // zone is a fixed `editZoneWidth` band centered on the number; the ± zones
-    // fill the rest.
-    // Split along the player's left→right axis — 0°/180° split horizontally
-    // (vertical dividers); ±90° split vertically — matching `tapZone`.
+    // Tap targets span each full cell height. The center follows the rendered
+    // number width; the ± targets fill the remaining width to the cell edges.
     let tapPath = UIBezierPath()
-    let editHalf = PlayerCellView.editZoneWidth / 2
-    for (i, slot) in slots.enumerated() where i < cellViews.count {
+    for i in slots.indices where i < cellViews.count {
       let cell = cellViews[i]
-      let numRect = cell.lifeTapAreaRect(in: self)
-      tapPath.append(UIBezierPath(rect: numRect))
-      let axisIsHorizontal = abs(Int(slot.rotationDegrees)) != 90
-      for s in [-editHalf, editHalf] {
-        if axisIsHorizontal {
-          let x = numRect.midX + s
-          tapPath.move(to: CGPoint(x: x, y: numRect.minY))
-          tapPath.addLine(to: CGPoint(x: x, y: numRect.maxY))
-        } else {
-          let y = numRect.midY + s
-          tapPath.move(to: CGPoint(x: numRect.minX, y: y))
-          tapPath.addLine(to: CGPoint(x: numRect.maxX, y: y))
-        }
+      for rect in cell.interactionAreaRects(in: self) {
+        tapPath.append(UIBezierPath(rect: rect))
       }
     }
     tapZoneShape.path = tapPath.cgPath
@@ -432,9 +454,19 @@ class GameBoardView: UIView {
   private static func uniformDotSize(for slots: [Slot]) -> CGFloat {
     slots.map { slot in
       let swapped = abs(Int(slot.rotationDegrees)) == 90
-      let contentW = (swapped ? slot.frame.height : slot.frame.width) - PlayerCellView.contentInset * 2
-      let contentH = (swapped ? slot.frame.width : slot.frame.height) - PlayerCellView.verticalInset * 2
-      return DotNumberView.dotSize(fitting: CGSize(width: contentW, height: contentH))
+      let readingWidth = swapped ? slot.frame.height : slot.frame.width
+      let readingHeight = swapped ? slot.frame.width : slot.frame.height
+      let numberWidth = max(
+        1,
+        readingWidth - PlayerCellView.minimumAdjustmentTargetWidth * 2
+      )
+      let numberHeight = max(
+        1,
+        readingHeight - PlayerCellView.verticalInset * 2
+      )
+      return DotNumberView.dotSize(
+        fitting: CGSize(width: numberWidth, height: numberHeight)
+      )
     }.min() ?? 0
   }
 
@@ -443,7 +475,6 @@ class GameBoardView: UIView {
   @objc private func handleResetSwipe(_ pan: UIPanGestureRecognizer) {
     switch pan.state {
     case .began:
-      revealFirstPlayerSelection()
       let v = pan.velocity(in: self)
       sweepAxisIsHorizontal = abs(v.x) >= abs(v.y)
       let dir: CGFloat = sweepAxisIsHorizontal
@@ -525,8 +556,10 @@ class GameBoardView: UIView {
     stopFirstPlayerSweepDisplayLink()
     firstPlayerAnimationGeneration += 1
     firstPlayerAnimationPhase = .sweeping
+    firstPlayerSweepWinner = cellViews.indices.randomElement() ?? 0
     skeletonView.alpha = 0
     for cell in cellViews {
+      cell.isUserInteractionEnabled = false
       cell.setFirstPlayerChromeVisible(false, animated: false)
       cell.setFirstPlayerEmphasis(
         alpha: Self.firstPlayerDimAlpha,
@@ -544,8 +577,8 @@ class GameBoardView: UIView {
         !cellViews.isEmpty else { return }
 
     let generation = firstPlayerAnimationGeneration
-    guard let winner = cellViews.indices.randomElement(),
-        currentSlots.indices.contains(winner) else { return }
+    let winner = firstPlayerSweepWinner
+    guard currentSlots.indices.contains(winner) else { return }
 
     if UIAccessibility.isReduceMotionEnabled {
       landFirstPlayer(winner, generation: generation)
@@ -594,15 +627,51 @@ class GameBoardView: UIView {
     displayLink.add(to: .main, forMode: .common)
   }
 
-  /// End the sweep/fade immediately without consuming the interaction that
-  /// requested it.
-  func revealFirstPlayerSelection() {
-    guard firstPlayerAnimationPhase != .idle else { return }
+  /// Consume a touch while first-player selection is active. A sweeping beam
+  /// jumps to its preselected winner through the normal landing path so the
+  /// winner still shakes. A second touch during the reveal completes the fade.
+  @discardableResult
+  func fastForwardFirstPlayerSelection() -> Bool {
+    switch firstPlayerAnimationPhase {
+    case .idle:
+      return false
+    case .sweeping:
+      let winner = firstPlayerSweepWinner
+      let generation = firstPlayerAnimationGeneration
+      stopFirstPlayerSweepDisplayLink()
+      prepareSkippedFirstPlayerLanding(winner: winner)
+      landFirstPlayer(winner, generation: generation)
+      return true
+    case .fading:
+      finishFirstPlayerSelection()
+      return true
+    }
+  }
+
+  /// A completed sweep leaves the winning dots near their natural transform
+  /// before the landing spring starts. Fast-forward can arrive while one or
+  /// more dots still carry the beam's near-zero scale, which makes the spring
+  /// briefly decompose that transform into an oversized flash. Normalize the
+  /// visual handoff without changing the landing shake itself.
+  private func prepareSkippedFirstPlayerLanding(winner: Int) {
+    for (index, cell) in cellViews.enumerated() {
+      let isWinner = index == winner
+      cell.setFirstPlayerEmphasis(
+        alpha: isWinner ? 1 : Self.firstPlayerDimAlpha,
+        scale: isWinner ? 1 : Self.firstPlayerDimScale,
+        animated: false,
+        duration: 0
+      )
+    }
+  }
+
+  private func finishFirstPlayerSelection() {
     stopFirstPlayerSweepDisplayLink()
     firstPlayerAnimationGeneration += 1
     firstPlayerAnimationPhase = .idle
 
     for cell in cellViews {
+      cell.isUserInteractionEnabled = true
       cell.setFirstPlayerChromeVisible(true, animated: true)
       cell.setFirstPlayerEmphasis(
         alpha: 1,
@@ -647,6 +716,11 @@ class GameBoardView: UIView {
       )
     }
     updateFirstPlayerSweepHaptic(for: angle, origin: origin)
+    playFirstPlayerSweepSounds(
+      from: firstPlayerSweepPreviousAngle,
+      to: angle,
+      progress: CGFloat(progress)
+    )
     firstPlayerSweepPreviousAngle = angle
 
     guard progress >= 1 else { return }
@@ -695,6 +769,36 @@ class GameBoardView: UIView {
     firstPlayerSweepDisplayLink = nil
     firstPlayerSweepDisplayLinkTarget = nil
     firstPlayerSweepStartTime = nil
+    AppSoundPlayer.shared.stop(.lighthouseSpin)
+  }
+
+  private func playFirstPlayerSweepSounds(
+    from startAngle: CGFloat,
+    to endAngle: CGFloat,
+    progress: CGFloat
+  ) {
+    guard !cellViews.isEmpty else { return }
+    let fullTurn = CGFloat.pi * 2
+    let beatAngle = fullTurn / CGFloat(cellViews.count)
+    let completedBeatsBefore = floor(
+      (startAngle - firstPlayerSweepStartAngle) / beatAngle
+    )
+    let completedBeatsAfter = floor(
+      (endAngle - firstPlayerSweepStartAngle) / beatAngle
+    )
+    let beatCount = max(0, Int(completedBeatsAfter - completedBeatsBefore))
+    guard beatCount > 0 else { return }
+
+    let speedProgress = pow(
+      progress,
+      Self.firstPlayerSweepAccelerationExponent - 1
+    )
+    let pitchRange = Self.firstPlayerSweepEndPitch - Self.firstPlayerSweepStartPitch
+    let pitch = Self.firstPlayerSweepStartPitch + pitchRange * Float(speedProgress)
+
+    for _ in 0..<beatCount {
+      AppSoundPlayer.shared.play(.lighthouseSpin, pitch: pitch)
+    }
   }
 
   private func landFirstPlayer(_ winner: Int, generation: Int) {
@@ -712,6 +816,7 @@ class GameBoardView: UIView {
         duration: 0.14
       )
     }
+    AppSoundPlayer.shared.play(.lighthouseLanding)
     cellViews[winner].shakeFirstPlayerLanding()
     restoreFirstPlayerBoardChrome()
 
@@ -741,6 +846,7 @@ class GameBoardView: UIView {
         guard let self,
             generation == self.firstPlayerAnimationGeneration else { return }
         self.firstPlayerAnimationPhase = .idle
+        self.cellViews.forEach { $0.isUserInteractionEnabled = true }
       }
     }
   }
@@ -756,30 +862,22 @@ class GameBoardView: UIView {
     }
   }
 
-  /// Project each seat's unit-square `cellRect` into the board frame, insetting
-  /// any edge that doesn't touch the board boundary by half the inter-cell gap.
-  /// This way different layouts (clean grids, diamond, mixed) all get
-  /// consistent gutters automatically.
+  /// Project each seat's unit-square `cellRect` directly into the board frame.
+  /// Adjacent normalized rectangles meet at a shared edge with no gutter.
   private func layoutSlots(for layout: PlayerLayout, in size: CGSize) -> [Slot] {
-    let halfGap = Self.gap / 2
     let w = size.width
     let h = size.height
-    let eps: CGFloat = 0.0001
 
     return layout.seats.map { seat in
       let r = seat.cellRect
-      let leftEdgeAtBoundary = r.minX < eps
-      let rightEdgeAtBoundary = r.maxX > 1 - eps
-      let topEdgeAtBoundary = r.minY < eps
-      let bottomEdgeAtBoundary = r.maxY > 1 - eps
-
-      let xMin = r.minX * w + (leftEdgeAtBoundary ? 0 : halfGap)
-      let xMax = r.maxX * w - (rightEdgeAtBoundary ? 0 : halfGap)
-      let yMin = r.minY * h + (topEdgeAtBoundary ? 0 : halfGap)
-      let yMax = r.maxY * h - (bottomEdgeAtBoundary ? 0 : halfGap)
 
       return Slot(
-        frame: CGRect(x: xMin, y: yMin, width: xMax - xMin, height: yMax - yMin),
+        frame: CGRect(
+          x: r.minX * w,
+          y: r.minY * h,
+          width: r.width * w,
+          height: r.height * h
+        ),
         rotationDegrees: seat.rotationDegrees
       )
     }

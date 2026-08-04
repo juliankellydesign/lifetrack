@@ -1,15 +1,15 @@
 import Foundation
 
 enum ChangeDirection {
-    case increasing, decreasing
+  case increasing, decreasing
 
-    func delay(forRow row: Int) -> Double {
-        let interval = 0.035
-        switch self {
-        case .decreasing: return Double(row) * interval
-        case .increasing: return Double(DotPatterns.rows - 1 - row) * interval
-        }
+  func delay(forRow row: Int, rowCount: Int) -> Double {
+    let interval = 0.035
+    switch self {
+    case .decreasing: return Double(row) * interval
+    case .increasing: return Double(rowCount - 1 - row) * interval
     }
+  }
 }
 
 /// One bitmap-font definition for the dot-matrix life total. Rows/columns are
@@ -17,39 +17,30 @@ enum ChangeDirection {
 /// `GameBoardView`'s dot-size fitting) stays size-agnostic — swapping fonts of
 /// different dimensions just reflows.
 struct DotFont {
-    let id: String
-    let rows: Int
-    let columns: Int
-    let digits: [[Bool]]
-    let minus: [Bool]
+  let id: String
+  let rows: Int
+  let columns: Int
+  let digits: [[Bool]]
+  let minus: [Bool]
 
-    func pattern(for digit: Int) -> [Bool] {
-        guard digit >= 0, digit <= 9 else { return minus }
-        return digits[digit]
-    }
+  func pattern(for digit: Int) -> [Bool] {
+    guard digit >= 0, digit <= 9 else { return minus }
+    return digits[digit]
+  }
 }
 
 /// Points at the active `DotFont`. Defaults to `.wide` (the original app font).
 /// Assigning a different style posts `didChange`, which `DotNumberView` observes
 /// to rebuild its digit views at the new dimensions.
 enum DotFontSettings {
-    static let didChange = Notification.Name("DotFontDidChange")
+  static let didChange = Notification.Name("DotFontDidChange")
 
-    static var current: DotFont = .wide {
-        didSet {
-            guard current.id != oldValue.id else { return }
-            NotificationCenter.default.post(name: didChange, object: nil)
-        }
+  static var current: DotFont = .wide {
+    didSet {
+      guard current.id != oldValue.id else { return }
+      NotificationCenter.default.post(name: didChange, object: nil)
     }
-}
-
-/// Thin proxy used by all the dot-rendering views — reads through to whatever
-/// font `DotFontSettings` currently points at.
-enum DotPatterns {
-    static var rows: Int { DotFontSettings.current.rows }
-    static var columns: Int { DotFontSettings.current.columns }
-    static func pattern(for digit: Int) -> [Bool] { DotFontSettings.current.pattern(for: digit) }
-    static var minus: [Bool] { DotFontSettings.current.minus }
+  }
 }
 
 // MARK: - Font catalog

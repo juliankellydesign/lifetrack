@@ -4,28 +4,36 @@ struct LifeInputResult {
   var lifeTotal: Int
   var commanderDamage: [Int: Int]
   var seatColors: Set<SeatColor>
+  var poisonCounters: Int
+}
+
+enum LifeInputDismissal {
+  case save(LifeInputResult)
+  case cancel
 }
 
 class LifeInputOverlay: UIView {
   static let dotHeroAnimationDuration = DotNumberView.editHeroTotalDuration
 
-  var onDismiss: ((LifeInputResult) -> Void)?
+  var onDismiss: ((LifeInputDismissal) -> Void)?
 
   private let contentContainer = UIView()
   let dotNumberView = DotNumberView()
   private let colorPickerView = SeatColorPickerView()
+  private let poisonCounterView = PoisonCounterView()
   let numberPadView = NumberPadView()
 
-  /// Debug overlay: when true, strokes the usable content area plus every
-  /// laid-out region (life number and number pad) and each number-pad key.
-  /// Mirrors `GameBoardView.showsGridSkeleton`.
+  /// Debug overlay: when true, strokes the usable content area and the color
+  /// picker, life number, and number-pad regions, plus each picker and keypad
+  /// tap target. Mirrors `GameBoardView.showsGridSkeleton`.
   var showsGridSkeleton = false {
     didSet {
       guard showsGridSkeleton != oldValue else { return }
       setNeedsLayout()
     }
   }
-  private let skeletonShape = CAShapeLayer()
+  private let skeletonRegionShape = CAShapeLayer()
+  private let skeletonTapShape = CAShapeLayer()
 
   /// Padding from the safe-area edges of the screen to the input view's content.
   private static let horizontalEdgePadding: CGFloat = 0   // safe area already covers this in landscape
@@ -38,9 +46,10 @@ class LifeInputOverlay: UIView {
   private var lifeTotal: Int = 0
   private var commanderDamage: [Int: Int] = [:]
   private var seatColors: Set<SeatColor> = [.colorless]
+  private var poisonCounters = 0
+  private var initialSeatColors: Set<SeatColor> = [.colorless]
   private var colorSeed = 0
   private(set) var rotation: CGFloat = 0
-  private var direction: ChangeDirection?
   private var finalDotCenter: CGPoint = .zero
 
   private var displayNumber: Int {
@@ -74,15 +83,24 @@ class LifeInputOverlay: UIView {
       self.dotNumberView.setSeatColors(colors, seed: self.colorSeed, animated: true)
     }
     contentContainer.addSubview(colorPickerView)
+    poisonCounterView.onValueChanged = { [weak self] value in
+      self?.poisonCounters = value
+    }
+    contentContainer.addSubview(poisonCounterView)
     numberPadView.onKey = { [weak self] key in self?.handleKey(key) }
     contentContainer.addSubview(numberPadView)
 
-    skeletonShape.fillColor = UIColor.clear.cgColor
-    skeletonShape.strokeColor = UIColor.systemGreen.withAlphaComponent(0.9).cgColor
-    skeletonShape.lineWidth = 1
-    skeletonShape.zPosition = 999 // keep on top of the region subviews
-    contentContainer.layer.addSublayer(skeletonShape)
+    skeletonRegionShape.fillColor = UIColor.clear.cgColor
+    skeletonRegionShape.strokeColor = UIColor.systemGreen.withAlphaComponent(0.9).cgColor
+    skeletonRegionShape.lineWidth = 1
+    skeletonRegionShape.zPosition = 998
+    contentContainer.layer.addSublayer(skeletonRegionShape)
 
+    skeletonTapShape.fillColor = UIColor.clear.cgColor
+    skeletonTapShape.strokeColor = UIColor.systemOrange.withAlphaComponent(0.9).cgColor
+    skeletonTapShape.lineWidth = 1
+    skeletonTapShape.zPosition = 999
+    contentContainer.layer.addSublayer(skeletonTapShape)
   }
 
   /// Configure state and lay out without animating; caller drives the transition.
@@ -90,22 +108,26 @@ class LifeInputOverlay: UIView {
     lifeTotal: Int,
     commanderDamage: [Int: Int],
     seatColors: Set<SeatColor>,
+    poisonCounters: Int,
     colorSeed: Int,
     rotation: CGFloat
   ) {
     self.lifeTotal = lifeTotal
     self.commanderDamage = commanderDamage
     self.seatColors = seatColors.isEmpty ? [.colorless] : seatColors
+    self.poisonCounters = max(0, poisonCounters)
+    initialSeatColors = self.seatColors
     self.colorSeed = colorSeed
     self.rotation = rotation
     inputText = ""
-    direction = nil
     isHidden = false
     alpha = 1
     backgroundColor = UIColor.black.withAlphaComponent(0)
     numberPadView.alpha = 0
     colorPickerView.alpha = 0
+    poisonCounterView.alpha = 0
     colorPickerView.prepare(colors: self.seatColors)
+    poisonCounterView.prepare(value: self.poisonCounters, isInteractive: true)
     dotNumberView.setSeatColors(self.seatColors, seed: colorSeed, animated: false)
 
     dotNumberView.finishEditHero()
@@ -167,6 +189,7 @@ class LifeInputOverlay: UIView {
     backgroundColor = .black
     numberPadView.alpha = 1
     colorPickerView.alpha = 1
+    poisonCounterView.alpha = 1
   }
 
   /// Fade chrome away. Call inside an animation block.
@@ -174,12 +197,31 @@ class LifeInputOverlay: UIView {
     backgroundColor = UIColor.black.withAlphaComponent(0)
     numberPadView.alpha = 0
     colorPickerView.alpha = 0
+    poisonCounterView.alpha = 0
   }
 
   func finishDismiss() {
     dotNumberView.finishEditHero()
     alpha = 0
     isHidden = true
+  }
+
+  /// Cancellation keeps the player's model untouched. Restore the original
+  /// visual state as well so the return hero matches the unchanged board.
+  func prepareCancellationHero() {
+    let replacesTypedNumber = !inputText.isEmpty
+    inputText = ""
+    seatColors = initialSeatColors
+    if replacesTypedNumber {
+      dotNumberView.prepareCancellationReplacement(
+        lifeTotal,
+        seatColors: seatColors,
+        seed: colorSeed
+      )
+    } else {
+      dotNumberView.setSeatColors(seatColors, seed: colorSeed, animated: false)
+      dotNumberView.updateNumber(lifeTotal, direction: nil, animated: false)
+    }
   }
 
   override func safeAreaInsetsDidChange() {
@@ -232,11 +274,17 @@ class LifeInputOverlay: UIView {
       dotNumberView.frame = CGRect(
         x: hPad, y: vPad + pickerBandHeight + padRowSpacing,
         width: lifeColW,
-        height: padH - pickerBandHeight - padRowSpacing
+        height: pickerBandHeight * 2 + padRowSpacing
       )
       colorPickerView.frame = CGRect(
         x: hPad, y: vPad,
         width: lifeColW, height: pickerBandHeight
+      )
+      poisonCounterView.frame = CGRect(
+        x: hPad,
+        y: vPad + (pickerBandHeight + padRowSpacing) * 3,
+        width: lifeColW,
+        height: pickerBandHeight
       )
       numberPadView.frame = CGRect(
         x: hPad + lifeColW, y: vPad,
@@ -248,14 +296,22 @@ class LifeInputOverlay: UIView {
       let padH = contentH * 0.45
       let lifeH = usableH - padH
       let pickerBandHeight = SeatColorPickerView.preferredHeight
+      let poisonBandHeight = PoisonCounterView.preferredHeight
 
       dotNumberView.frame = CGRect(
         x: hPad, y: vPad + pickerBandHeight,
-        width: usableW, height: lifeH - pickerBandHeight
+        width: usableW,
+        height: max(1, lifeH - pickerBandHeight - poisonBandHeight)
       )
       colorPickerView.frame = CGRect(
         x: hPad, y: vPad,
         width: usableW, height: pickerBandHeight
+      )
+      poisonCounterView.frame = CGRect(
+        x: hPad,
+        y: vPad + lifeH - poisonBandHeight,
+        width: usableW,
+        height: poisonBandHeight
       )
       numberPadView.frame = CGRect(
         x: hPad, y: vPad + lifeH,
@@ -275,25 +331,52 @@ class LifeInputOverlay: UIView {
   private func updateSkeleton() {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    skeletonShape.frame = contentContainer.bounds
+    skeletonRegionShape.frame = contentContainer.bounds
+    skeletonTapShape.frame = contentContainer.bounds
 
     guard showsGridSkeleton else {
-      skeletonShape.path = nil
+      skeletonRegionShape.path = nil
+      skeletonTapShape.path = nil
       CATransaction.commit()
       return
     }
 
     numberPadView.layoutIfNeeded()
-    let path = UIBezierPath()
-    path.append(UIBezierPath(rect: contentContainer.bounds.insetBy(dx: 0.5, dy: 0.5)))
-    for region in [colorPickerView.frame, dotNumberView.frame, numberPadView.frame] {
-      path.append(UIBezierPath(rect: region))
+    colorPickerView.layoutIfNeeded()
+    poisonCounterView.layoutIfNeeded()
+
+    let regionPath = UIBezierPath()
+    regionPath.append(UIBezierPath(rect: contentContainer.bounds.insetBy(dx: 0.5, dy: 0.5)))
+    for region in [
+      colorPickerView.frame,
+      dotNumberView.frame,
+      poisonCounterView.frame,
+      numberPadView.frame,
+    ] {
+      regionPath.append(UIBezierPath(rect: region))
+    }
+
+    let tapPath = UIBezierPath(rect: dotNumberView.frame)
+    let pickerOrigin = colorPickerView.frame.origin
+    for target in colorPickerView.tapTargetFrames {
+      tapPath.append(UIBezierPath(
+        rect: target.offsetBy(dx: pickerOrigin.x, dy: pickerOrigin.y)
+      ))
+    }
+    let poisonOrigin = poisonCounterView.frame.origin
+    for target in poisonCounterView.tapTargetFrames {
+      tapPath.append(UIBezierPath(
+        rect: target.offsetBy(dx: poisonOrigin.x, dy: poisonOrigin.y)
+      ))
     }
     let padOrigin = numberPadView.frame.origin
     for key in numberPadView.keyFrames {
-      path.append(UIBezierPath(rect: key.offsetBy(dx: padOrigin.x, dy: padOrigin.y)))
+      tapPath.append(UIBezierPath(
+        rect: key.offsetBy(dx: padOrigin.x, dy: padOrigin.y)
+      ))
     }
-    skeletonShape.path = path.cgPath
+    skeletonRegionShape.path = regionPath.cgPath
+    skeletonTapShape.path = tapPath.cgPath
     CATransaction.commit()
   }
 
@@ -321,36 +404,31 @@ class LifeInputOverlay: UIView {
   }
 
   private func handleKey(_ key: NumberPadKey) {
-    let oldNumber = displayNumber
+    let replacesExistingValue = inputText.isEmpty
     switch key {
     case .digit(let d):
       if inputText.count < 4 {
         inputText += "\(d)"
       }
-    case .backspace:
-      if inputText.isEmpty {
-        let s = String(lifeTotal)
-        inputText = String(s.dropLast())
-      } else {
-        inputText.removeLast()
-      }
-    case .clear:
-      inputText = ""
+    case .cancel:
+      onDismiss?(.cancel)
+      return
     case .confirm:
       if !inputText.isEmpty, let value = Int(inputText) {
         lifeTotal = value
       }
-      onDismiss?(LifeInputResult(
+      onDismiss?(.save(LifeInputResult(
         lifeTotal: lifeTotal,
         commanderDamage: commanderDamage,
-        seatColors: seatColors
-      ))
+        seatColors: seatColors,
+        poisonCounters: poisonCounters
+      )))
       return
     }
     let newNumber = displayNumber
-    if newNumber != oldNumber {
-      direction = newNumber > oldNumber ? .increasing : .decreasing
-    }
-    dotNumberView.updateNumber(newNumber, direction: direction, animated: true)
+    dotNumberView.updateNumberFromKeypad(
+      newNumber,
+      replacesExistingValue: replacesExistingValue
+    )
   }
 }

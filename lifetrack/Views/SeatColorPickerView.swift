@@ -4,6 +4,7 @@ final class SeatColorPickerView: UIView {
   static let preferredHeight: CGFloat = 44
 
   var onSelectionChanged: ((Set<SeatColor>) -> Void)?
+  var tapTargetFrames: [CGRect] { buttons.map(\.frame) }
 
   private var selectedColors: Set<SeatColor> = [.colorless]
   private var buttons: [SeatColorSwatchButton] = []
@@ -32,8 +33,13 @@ final class SeatColorPickerView: UIView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    let gap = dotSize
     let count = CGFloat(buttons.count)
+    let referenceWidth = DotNumberView.renderedWidth(
+      dotSize: dotSize,
+      digitCount: 2,
+      font: .wide
+    )
+    let gap = (referenceWidth - count * dotSize) / max(1, count - 1)
     let totalWidth = count * dotSize + max(0, count - 1) * gap
     var x = (bounds.width - totalWidth) / 2
     let buttonHeight = max(Self.preferredHeight, dotSize + 6)
@@ -58,10 +64,15 @@ final class SeatColorPickerView: UIView {
     for (index, color) in SeatColor.allCases.enumerated() {
       let button = SeatColorSwatchButton(type: .custom)
       button.tag = index
-      button.swatchColor = color.swatchColor
+      button.swatchColor = color == .colorless
+        ? UIColor.white.withAlphaComponent(0.3)
+        : color.swatchColor
       button.isAccessibilityElement = true
       button.accessibilityLabel = "\(color.accessibilityName) seat color"
       button.accessibilityIdentifier = "seat-color-\(color.rawValue)"
+      button.addAction(UIAction { _ in
+        AppSoundPlayer.shared.play(.button)
+      }, for: .touchDown)
       button.addTarget(self, action: #selector(handleSwatchTap(_:)), for: .touchUpInside)
       addSubview(button)
       buttons.append(button)

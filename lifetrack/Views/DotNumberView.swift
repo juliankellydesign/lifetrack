@@ -15,7 +15,6 @@ class DotNumberView: UIView {
   /// Gap between adjacent digits, in dot-diameter units — one full dot of
   /// space, matching the blank column between digits in the reference font.
   private static let digitGapRatio: CGFloat = 1.0
-
   private var lastLayoutSize: CGSize = .zero
   private var lastMaxDotSize: CGFloat?
   private var lastFontID: String?
@@ -50,14 +49,30 @@ class DotNumberView: UIView {
     setNeedsLayout()
   }
 
-  static func dotSize(fitting size: CGSize, digitCount: Int = 2) -> CGFloat {
+  static func dotSize(
+    fitting size: CGSize,
+    digitCount: Int = 2,
+    font: DotFont = DotFontSettings.current
+  ) -> CGFloat {
     let count = CGFloat(digitCount)
-    let cols = count * CGFloat(DotPatterns.columns)
-      + count * CGFloat(DotPatterns.columns - 1) * spacingRatio
+    let cols = count * CGFloat(font.columns)
+      + count * CGFloat(font.columns - 1) * spacingRatio
       + (count - 1) * digitGapRatio
-    let rows = CGFloat(DotPatterns.rows)
-      + CGFloat(DotPatterns.rows - 1) * spacingRatio
+    let rows = CGFloat(font.rows)
+      + CGFloat(font.rows - 1) * spacingRatio
     return min(size.width / cols, size.height / rows)
+  }
+
+  static func renderedWidth(
+    dotSize: CGFloat,
+    digitCount: Int,
+    font: DotFont
+  ) -> CGFloat {
+    let spacing = dotSize * spacingRatio
+    let digitWidth = CGFloat(font.columns) * dotSize
+      + CGFloat(font.columns - 1) * spacing
+    return CGFloat(digitCount) * digitWidth
+      + CGFloat(max(0, digitCount - 1)) * dotSize * digitGapRatio
   }
 
   func setSeatColors(_ colors: Set<SeatColor>, seed: Int, animated: Bool) {
@@ -77,6 +92,7 @@ class DotNumberView: UIView {
     let oldDigits = Self.digitValues(for: number)
     let newDigits = Self.digitValues(for: newNumber)
     number = newNumber
+    let font = DotFontSettings.current
 
     guard bounds.width > 0 && bounds.height > 0 else { return }
 
@@ -84,10 +100,120 @@ class DotNumberView: UIView {
     // when the dot font itself changed — the new font has different
     // dimensions, so the old digit views (and their dot counts) are stale.
     if oldDigits.count != newDigits.count || digitViews.isEmpty
-      || builtFontID != DotFontSettings.current.id {
+      || builtFontID != font.id {
       buildDigitViews(for: newDigits)
     }
     applyDigits(newDigits, direction: direction, animated: animated)
+  }
+
+  /// Keypad entry has different semantics from +/- changes: unchanged leading
+  /// digits should smoothly make room, while replaced and appended digits
+  /// dissolve at dot level instead of rolling between bitmap patterns.
+  func updateNumberFromKeypad(
+    _ newNumber: Int,
+    replacesExistingValue: Bool
+  ) {
+    replaceNumberForKeypad(
+      newNumber,
+      replacesExistingValue: replacesExistingValue,
+      animatesIncomingDigits: true,
+      forcesReplacement: false
+    )
+  }
+
+  /// Prepare the saved value as the current hero content without disturbing
+  /// the typed views that are dissolving above it. The restored dots stay off
+  /// until `animateEditHeroToSource` fades, scales, and moves them to the board.
+  func prepareCancellationReplacement(
+    _ restoredNumber: Int,
+    seatColors: Set<SeatColor>,
+    seed: Int
+  ) {
+    self.seatColors = seatColors.isEmpty ? [.colorless] : seatColors
+    colorSeed = seed
+    replaceNumberForKeypad(
+      restoredNumber,
+      replacesExistingValue: true,
+      animatesIncomingDigits: false,
+      forcesReplacement: true
+    )
+  }
+
+  private func replaceNumberForKeypad(
+    _ newNumber: Int,
+    replacesExistingValue: Bool,
+    animatesIncomingDigits: Bool,
+    forcesReplacement: Bool
+  ) {
+    layoutIfNeeded()
+    let oldDigits = Self.digitValues(for: number)
+    let newDigits = Self.digitValues(for: newNumber)
+    guard (newNumber != number || forcesReplacement),
+      bounds.width > 0,
+      bounds.height > 0,
+      !digitViews.isEmpty,
+      builtFontID == DotFontSettings.current.id else {
+      updateNumber(newNumber, direction: nil, animated: true)
+      return
+    }
+
+    let oldViews = digitViews
+    number = newNumber
+    let newViews = makeDigitViews(for: newDigits)
+    digitViews = newViews
+    applyDigits(newDigits, direction: nil, animated: false)
+    lastLayoutSize = bounds.size
+    lastMaxDotSize = maxDotSize
+    lastFontID = DotFontSettings.current.id
+
+    let retainedCount = replacesExistingValue
+      ? 0
+      : zip(oldDigits, newDigits).prefix { $0 == $1 }.count
+
+    for index in newViews.indices {
+      let newView = newViews[index]
+      if index < retainedCount {
+        let oldView = oldViews[index]
+        let oldLayer = oldView.layer.presentation() ?? oldView.layer
+        let oldScale = (oldLayer.value(forKeyPath: "transform.scale.x") as? NSNumber)
+          .map { CGFloat(truncating: $0) }
+          ?? 1
+        let widthRatio = oldView.bounds.width / max(newView.bounds.width, 0.001)
+        let destinationCenter = newView.center
+        newView.prepareKeypadRetainedAppearance(from: oldView)
+        newView.center = oldLayer.position
+        let initialScale = oldScale * widthRatio
+        newView.transform = CGAffineTransform(
+          scaleX: initialScale,
+          y: initialScale
+        )
+        oldView.removeFromSuperview()
+        newView.animateKeypadDissolveIn()
+        UIView.animate(
+          withDuration: 0.34,
+          delay: 0,
+          usingSpringWithDamping: 0.86,
+          initialSpringVelocity: 0,
+          options: [.beginFromCurrentState, .allowUserInteraction]
+        ) {
+          newView.center = destinationCenter
+          newView.transform = .identity
+        }
+      } else {
+        newView.prepareKeypadDissolveIn()
+        if animatesIncomingDigits {
+          newView.animateKeypadDissolveIn()
+        }
+      }
+    }
+
+    for index in retainedCount..<oldViews.count {
+      let oldView = oldViews[index]
+      bringSubviewToFront(oldView)
+      oldView.animateKeypadDissolveOut {
+        oldView.removeFromSuperview()
+      }
+    }
   }
 
   override func layoutSubviews() {
@@ -108,24 +234,35 @@ class DotNumberView: UIView {
 
   private func buildDigitViews(for digits: [Int]) {
     digitViews.forEach { $0.removeFromSuperview() }
-    digitViews.removeAll()
-    builtFontID = DotFontSettings.current.id
+    digitViews = makeDigitViews(for: digits)
+  }
+
+  private func makeDigitViews(for digits: [Int]) -> [DotDigitView] {
+    let font = DotFontSettings.current
+    builtFontID = font.id
 
     let dotSz = computeDotSize(digitCount: digits.count)
     let spc = dotSz * Self.spacingRatio
     let digitGap = dotSz * Self.digitGapRatio
 
-    let digitW = CGFloat(DotPatterns.columns) * dotSz + CGFloat(DotPatterns.columns - 1) * spc
-    let digitH = CGFloat(DotPatterns.rows) * dotSz + CGFloat(DotPatterns.rows - 1) * spc
-    let totalW = CGFloat(digits.count) * digitW + CGFloat(digits.count - 1) * digitGap
+    let digitW = CGFloat(font.columns) * dotSz
+      + CGFloat(font.columns - 1) * spc
+    let digitH = CGFloat(font.rows) * dotSz
+      + CGFloat(font.rows - 1) * spc
+    let totalW = Self.renderedWidth(
+      dotSize: dotSz,
+      digitCount: digits.count,
+      font: font
+    )
 
     var x = (bounds.width - totalW) / 2
     let y = (bounds.height - digitH) / 2
+    var views: [DotDigitView] = []
 
     let orderedColors = SeatColor.allCases.filter { seatColors.contains($0) }
     for index in digits.indices {
       let dv = DotDigitView()
-      dv.configure(dotSize: dotSz, spacing: spc)
+      dv.configure(font: font, dotSize: dotSz, spacing: spc)
       dv.setSeatColors(
         orderedColors,
         seed: colorSeed &+ index &* 104_729,
@@ -133,9 +270,10 @@ class DotNumberView: UIView {
       )
       dv.frame = CGRect(x: x, y: y, width: dv.contentWidth, height: dv.contentHeight)
       addSubview(dv)
-      digitViews.append(dv)
+      views.append(dv)
       x += digitW + digitGap
     }
+    return views
   }
 
   private func applyDigits(_ digits: [Int], direction: ChangeDirection?, animated: Bool) {
@@ -288,11 +426,14 @@ class DotNumberView: UIView {
   var numberContentRect: CGRect {
     guard bounds.width > 0 && bounds.height > 0 else { return .zero }
     let digits = Self.digitValues(for: number)
+    let font = DotFontSettings.current
     let dotSz = computeDotSize(digitCount: digits.count)
     let spc = dotSz * Self.spacingRatio
     let digitGap = dotSz * Self.digitGapRatio
-    let digitW = CGFloat(DotPatterns.columns) * dotSz + CGFloat(DotPatterns.columns - 1) * spc
-    let digitH = CGFloat(DotPatterns.rows) * dotSz + CGFloat(DotPatterns.rows - 1) * spc
+    let digitW = CGFloat(font.columns) * dotSz
+      + CGFloat(font.columns - 1) * spc
+    let digitH = CGFloat(font.rows) * dotSz
+      + CGFloat(font.rows - 1) * spc
     let totalW = CGFloat(digits.count) * digitW + CGFloat(digits.count - 1) * digitGap
     let x = (bounds.width - totalW) / 2
     let y = (bounds.height - digitH) / 2
@@ -300,12 +441,13 @@ class DotNumberView: UIView {
   }
 
   private func computeDotSize(digitCount: Int) -> CGFloat {
+    let font = DotFontSettings.current
     let count = CGFloat(digitCount)
-    let cols = count * CGFloat(DotPatterns.columns)
-      + count * CGFloat(DotPatterns.columns - 1) * Self.spacingRatio
+    let cols = count * CGFloat(font.columns)
+      + count * CGFloat(font.columns - 1) * Self.spacingRatio
       + (count - 1) * Self.digitGapRatio
-    let rows = CGFloat(DotPatterns.rows)
-      + CGFloat(DotPatterns.rows - 1) * Self.spacingRatio
+    let rows = CGFloat(font.rows)
+      + CGFloat(font.rows - 1) * Self.spacingRatio
     return min(bounds.width / cols, bounds.height / rows, maxDotSize ?? .infinity)
   }
 

@@ -6,15 +6,17 @@ class GameViewController: UIViewController {
   private var editingIndex: Int?
 
   private let gameBoardView = GameBoardView()
-  private let toolbarView = UIView()
+  private let toolbarView = DebugToolbarView()
   private let gridButton = UIButton()
   private let fontButton = UIButton()
   private let overlayView = LifeInputOverlay()
   private let layoutSelectorView = LayoutSelectorView()
   private let screenSkeletonView = UIView()
+  private let screenGridShape = CAShapeLayer()
   private let screenEdgeShape = CAShapeLayer()
 
   private var showsGridSkeleton = false
+  private var preservesFontSelectionForNextGame = false
   /// Index into `DotFont.allStyles` for the active dot font.
   private var fontIndex = DotFont.allStyles.firstIndex { $0.id == DotFontSettings.current.id } ?? 0
 
@@ -24,7 +26,7 @@ class GameViewController: UIViewController {
   override func loadView() {
     let rootView = GameInteractionView()
     rootView.onInteraction = { [weak self] in
-      self?.gameBoardView.revealFirstPlayerSelection()
+      self?.gameBoardView.fastForwardFirstPlayerSelection() ?? false
     }
     view = rootView
   }
@@ -48,7 +50,8 @@ class GameViewController: UIViewController {
       self?.presentOverlay(forPlayer: index, rotation: rotation)
     }
     gameBoardView.onLifeChanged = { [weak self] index, newLife in
-      self?.players[index].lifeTotal = newLife
+      guard let self, self.players.indices.contains(index) else { return }
+      self.players[index].lifeTotal = newLife
     }
     gameBoardView.onCommanderModeRequested = { [weak self] recipientIndex in
       guard let self else { return }
@@ -77,7 +80,8 @@ class GameViewController: UIViewController {
         lifeTotal: self.players[index].lifeTotal,
         direction: applied > 0 ? .decreasing : .increasing,
         animated: true,
-        shakes: false
+        shakes: false,
+        hasLethalCommanderDamage: self.players[index].hasLethalCommanderDamage
       )
     }
     gameBoardView.onResetRequested = { [weak self] in
@@ -122,10 +126,12 @@ class GameViewController: UIViewController {
 
   private func setupToolbar() {
     gridButton.isAccessibilityElement = true
-    gridButton.accessibilityLabel = "Grid skeleton"
+    gridButton.accessibilityLabel = "Layout grid and tap targets"
     updateGridButtonAppearance()
+    gridButton.addAction(UIAction { _ in
+      AppSoundPlayer.shared.play(.button)
+    }, for: .touchDown)
     gridButton.addAction(UIAction { [weak self] _ in
-      self?.gameBoardView.revealFirstPlayerSelection()
       self?.toggleGridSkeleton()
     }, for: .touchUpInside)
     toolbarView.addSubview(gridButton)
@@ -133,8 +139,10 @@ class GameViewController: UIViewController {
     fontButton.isAccessibilityElement = true
     fontButton.accessibilityLabel = "Dot font"
     updateFontButtonAppearance()
+    fontButton.addAction(UIAction { _ in
+      AppSoundPlayer.shared.play(.button)
+    }, for: .touchDown)
     fontButton.addAction(UIAction { [weak self] _ in
-      self?.gameBoardView.revealFirstPlayerSelection()
       self?.cycleFont()
     }, for: .touchUpInside)
     toolbarView.addSubview(fontButton)
@@ -144,8 +152,8 @@ class GameViewController: UIViewController {
 
   private func setupOverlay() {
     overlayView.isHidden = true
-    overlayView.onDismiss = { [weak self] result in
-      self?.dismissOverlay(result: result)
+    overlayView.onDismiss = { [weak self] dismissal in
+      self?.dismissOverlay(dismissal)
     }
     view.addSubview(overlayView)
   }
@@ -162,6 +170,11 @@ class GameViewController: UIViewController {
   private func setupScreenSkeleton() {
     screenSkeletonView.isUserInteractionEnabled = false
     screenSkeletonView.isHidden = true
+
+    screenGridShape.fillColor = UIColor.clear.cgColor
+    screenGridShape.strokeColor = UIColor.systemBlue.withAlphaComponent(0.22).cgColor
+    screenGridShape.lineWidth = 0.5
+    screenSkeletonView.layer.addSublayer(screenGridShape)
 
     screenEdgeShape.fillColor = UIColor.clear.cgColor
     screenEdgeShape.strokeColor = UIColor.systemGreen.withAlphaComponent(0.9).cgColor
@@ -220,6 +233,8 @@ class GameViewController: UIViewController {
   private func toggleGridSkeleton() {
     showsGridSkeleton.toggle()
     gameBoardView.showsGridSkeleton = showsGridSkeleton
+    layoutSelectorView.showsGridSkeleton = showsGridSkeleton
+    overlayView.showsGridSkeleton = showsGridSkeleton
     screenSkeletonView.isHidden = !showsGridSkeleton
     updateScreenSkeleton()
     updateGridButtonAppearance()
@@ -227,11 +242,32 @@ class GameViewController: UIViewController {
 
   private func updateScreenSkeleton() {
     screenSkeletonView.frame = view.bounds
+    screenGridShape.frame = screenSkeletonView.bounds
     screenEdgeShape.frame = screenSkeletonView.bounds
+
+    let gridPath = UIBezierPath()
+    var x = LayoutGrid.majorStep
+    while x < screenSkeletonView.bounds.width {
+      gridPath.move(to: CGPoint(x: x, y: 0))
+      gridPath.addLine(to: CGPoint(x: x, y: screenSkeletonView.bounds.height))
+      x += LayoutGrid.majorStep
+    }
+    var y = LayoutGrid.majorStep
+    while y < screenSkeletonView.bounds.height {
+      gridPath.move(to: CGPoint(x: 0, y: y))
+      gridPath.addLine(to: CGPoint(x: screenSkeletonView.bounds.width, y: y))
+      y += LayoutGrid.majorStep
+    }
+    screenGridShape.path = gridPath.cgPath
     screenEdgeShape.path = UIBezierPath(
       rect: screenSkeletonView.bounds.insetBy(dx: 0.5, dy: 0.5)
     ).cgPath
+    bringDebugToolsToFront()
+  }
+
+  private func bringDebugToolsToFront() {
     view.bringSubviewToFront(screenSkeletonView)
+    view.bringSubviewToFront(toolbarView)
   }
 
   private func updateGridButtonAppearance() {
@@ -249,6 +285,9 @@ class GameViewController: UIViewController {
   private func cycleFont() {
     fontIndex = (fontIndex + 1) % DotFont.allStyles.count
     DotFontSettings.current = DotFont.allStyles[fontIndex]
+    if !layoutSelectorView.isHidden {
+      preservesFontSelectionForNextGame = true
+    }
     updateFontButtonAppearance()
     UIImpactFeedbackGenerator(style: .light).impactOccurred()
   }
@@ -262,9 +301,21 @@ class GameViewController: UIViewController {
 
   private func resetPlayers(layout: PlayerLayout) {
     currentLayout = layout
+    if preservesFontSelectionForNextGame {
+      preservesFontSelectionForNextGame = false
+    } else {
+      applyDefaultDotFont(for: layout)
+    }
     let startingLife = layout == .two ? 20 : Player.defaultLife
     players = (0..<layout.count).map { Player(id: $0, lifeTotal: startingLife) }
     gameBoardView.configure(layout: layout, players: players)
+  }
+
+  private func applyDefaultDotFont(for layout: PlayerLayout) {
+    let font = layout.count >= 5 ? DotFont.narrow : DotFont.wide
+    fontIndex = DotFont.allStyles.firstIndex { $0.id == font.id } ?? 0
+    guard DotFontSettings.current.id != font.id else { return }
+    DotFontSettings.current = font
   }
 
   private func startGame(with layout: PlayerLayout) {
@@ -278,24 +329,22 @@ class GameViewController: UIViewController {
   }
 
   private func showLayoutSelector(animated: Bool) {
+    preservesFontSelectionForNextGame = false
+    AppSoundPlayer.shared.play(.layoutSelection)
     view.bringSubviewToFront(layoutSelectorView)
-    view.bringSubviewToFront(screenSkeletonView)
+    bringDebugToolsToFront()
     layoutSelectorView.isHidden = false
-    toolbarView.isUserInteractionEnabled = false
     if animated {
       UIView.animate(withDuration: 0.25) {
         self.layoutSelectorView.alpha = 1
-        self.toolbarView.alpha = 0
       }
     } else {
       layoutSelectorView.alpha = 1
-      toolbarView.alpha = 0
     }
   }
 
   private func hideLayoutSelector(animated: Bool, completion: (() -> Void)? = nil) {
-    toolbarView.isUserInteractionEnabled = true
-    view.bringSubviewToFront(screenSkeletonView)
+    bringDebugToolsToFront()
     let finish = {
       self.layoutSelectorView.isHidden = true
       completion?()
@@ -303,11 +352,9 @@ class GameViewController: UIViewController {
     if animated {
       UIView.animate(withDuration: 0.25, animations: {
         self.layoutSelectorView.alpha = 0
-        self.toolbarView.alpha = 1
       }, completion: { _ in finish() })
     } else {
       layoutSelectorView.alpha = 0
-      toolbarView.alpha = 1
       finish()
     }
   }
@@ -329,11 +376,13 @@ class GameViewController: UIViewController {
     gameBoardView.setEditing(index: index)
 
     let player = players[index]
-    overlayView.showsGridSkeleton = showsGridSkeleton
+    view.bringSubviewToFront(overlayView)
+    bringDebugToolsToFront()
     overlayView.prepare(
       lifeTotal: player.lifeTotal,
       commanderDamage: player.commanderDamage,
       seatColors: player.seatColors,
+      poisonCounters: player.poisonCounters,
       colorSeed: player.id,
       rotation: rotation
     )
@@ -343,6 +392,10 @@ class GameViewController: UIViewController {
       visualCenter: overlayCenter,
       sourceDotSize: cellDotSize
     )
+    AppSoundPlayer.shared.play(
+      .editTransition,
+      pitch: AppSoundPlayer.modeEntryPitchShift
+    )
     overlayView.animateDotNumberViewHeroToFinal()
 
     UIView.animate(
@@ -351,23 +404,37 @@ class GameViewController: UIViewController {
       options: .curveEaseOut
     ) {
       self.overlayView.presentChrome()
-      self.toolbarView.alpha = 0
     }
   }
 
-  private func dismissOverlay(result: LifeInputResult) {
+  private func dismissOverlay(_ dismissal: LifeInputDismissal) {
     guard let index = editingIndex,
         let cell = gameBoardView.cellView(at: index) else { return }
 
-    players[index].lifeTotal = result.lifeTotal
-    players[index].commanderDamage = result.commanderDamage
-    players[index].seatColors = result.seatColors
-    gameBoardView.updatePlayer(at: index, lifeTotal: result.lifeTotal)
-    gameBoardView.updateSeatColors(
-      at: index,
-      colors: result.seatColors,
-      seed: players[index].id
-    )
+    switch dismissal {
+    case .save(let result):
+      players[index].lifeTotal = result.lifeTotal
+      players[index].commanderDamage = result.commanderDamage
+      players[index].seatColors = result.seatColors
+      players[index].poisonCounters = result.poisonCounters
+      gameBoardView.updatePlayer(
+        at: index,
+        lifeTotal: result.lifeTotal,
+        hasLethalCommanderDamage: players[index].hasLethalCommanderDamage
+      )
+      gameBoardView.updateSeatColors(
+        at: index,
+        colors: result.seatColors,
+        seed: players[index].id
+      )
+      gameBoardView.updatePoisonCounters(
+        at: index,
+        value: result.poisonCounters,
+        animated: false
+      )
+    case .cancel:
+      overlayView.prepareCancellationHero()
+    }
     editingIndex = nil
 
     let cellDotView = cell.dotNumberView
@@ -377,10 +444,12 @@ class GameViewController: UIViewController {
     )
     let cellDotSize = cellDotView.actualDotSize
     let overlayCenter = overlayView.convert(cellVisualCenter, from: view)
+    AppSoundPlayer.shared.play(.editTransition)
     overlayView.animateDotNumberViewHeroToSource(
       visualCenter: overlayCenter,
       sourceDotSize: cellDotSize
     )
+    gameBoardView.restoreNoneditedAdjustmentChrome(excluding: index)
 
     UIView.animate(
       withDuration: LifeInputOverlay.dotHeroAnimationDuration,
@@ -390,7 +459,6 @@ class GameViewController: UIViewController {
       animations: {
         self.gameBoardView.setAllAlphas(1)
         self.overlayView.dismissChrome()
-        self.toolbarView.alpha = 1
       },
       completion: { _ in
         cell.isBeingEdited = false
@@ -402,12 +470,19 @@ class GameViewController: UIViewController {
 }
 
 private final class GameInteractionView: UIView {
-  var onInteraction: (() -> Void)?
+  var onInteraction: (() -> Bool)?
 
   override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-    if event != nil {
-      onInteraction?()
+    if event != nil, onInteraction?() == true {
+      return self
     }
     return super.hitTest(point, with: event)
+  }
+}
+
+private final class DebugToolbarView: UIView {
+  override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    let hitView = super.hitTest(point, with: event)
+    return hitView === self ? nil : hitView
   }
 }

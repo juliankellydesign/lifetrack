@@ -8,10 +8,26 @@
 
 /* Begin PBXBuildFile section */
 		11363E002FA88C9C0075A9FE /* appicon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 11363DFF2FA88C9C0075A9FE /* appicon.icon */; };
+		11A0D1012FB000010075A9FE /* ns_button_1.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1112FB000010075A9FE /* ns_button_1.wav */; };
+		11A0D1022FB000010075A9FE /* ns_button_2.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1122FB000010075A9FE /* ns_button_2.wav */; };
+		11A0D1032FB000010075A9FE /* ns_button_3.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1132FB000010075A9FE /* ns_button_3.wav */; };
+		11A0D1042FB000010075A9FE /* tonehigh.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1142FB000010075A9FE /* tonehigh.wav */; };
+		11A0D1052FB000010075A9FE /* short.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1152FB000010075A9FE /* short.wav */; };
+		11A0D1062FB000010075A9FE /* long.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1162FB000010075A9FE /* long.wav */; };
+		11A0D1072FB000010075A9FE /* ns_button_5.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1172FB000010075A9FE /* ns_button_5.wav */; };
+		11A0D1082FB000010075A9FE /* tonelow.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1182FB000010075A9FE /* tonelow.wav */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		11363DFF2FA88C9C0075A9FE /* appicon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = appicon.icon; sourceTree = "<group>"; };
+		11A0D1112FB000010075A9FE /* ns_button_1.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/ns_button_1.wav; sourceTree = "<group>"; };
+		11A0D1122FB000010075A9FE /* ns_button_2.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/ns_button_2.wav; sourceTree = "<group>"; };
+		11A0D1132FB000010075A9FE /* ns_button_3.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/ns_button_3.wav; sourceTree = "<group>"; };
+		11A0D1142FB000010075A9FE /* tonehigh.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/tonehigh.wav; sourceTree = "<group>"; };
+		11A0D1152FB000010075A9FE /* short.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/short.wav; sourceTree = "<group>"; };
+		11A0D1162FB000010075A9FE /* long.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/long.wav; sourceTree = "<group>"; };
+		11A0D1172FB000010075A9FE /* ns_button_5.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/ns_button_5.wav; sourceTree = "<group>"; };
+		11A0D1182FB000010075A9FE /* tonelow.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/tonelow.wav; sourceTree = "<group>"; };
 		11B94AE22F8B3EDD00E5E5C6 /* lifetrack.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = lifetrack.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -40,6 +56,14 @@
 				11B94AE42F8B3EDD00E5E5C6 /* lifetrack */,
 				11B94AE32F8B3EDD00E5E5C6 /* Products */,
 				11363DFF2FA88C9C0075A9FE /* appicon.icon */,
+				11A0D1112FB000010075A9FE /* ns_button_1.wav */,
+				11A0D1122FB000010075A9FE /* ns_button_2.wav */,
+				11A0D1132FB000010075A9FE /* ns_button_3.wav */,
+				11A0D1142FB000010075A9FE /* tonehigh.wav */,
+				11A0D1152FB000010075A9FE /* short.wav */,
+				11A0D1162FB000010075A9FE /* long.wav */,
+				11A0D1172FB000010075A9FE /* ns_button_5.wav */,
+				11A0D1182FB000010075A9FE /* tonelow.wav */,
 			);
 			sourceTree = "<group>";
 		};
@@ -116,6 +140,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				11363E002FA88C9C0075A9FE /* appicon.icon in Resources */,
+				11A0D1012FB000010075A9FE /* ns_button_1.wav in Resources */,
+				11A0D1022FB000010075A9FE /* ns_button_2.wav in Resources */,
+				11A0D1032FB000010075A9FE /* ns_button_3.wav in Resources */,
+				11A0D1042FB000010075A9FE /* tonehigh.wav in Resources */,
+				11A0D1052FB000010075A9FE /* short.wav in Resources */,
+				11A0D1062FB000010075A9FE /* long.wav in Resources */,
+				11A0D1072FB000010075A9FE /* ns_button_5.wav in Resources */,
+				11A0D1082FB000010075A9FE /* tonelow.wav in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -263,11 +295,11 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Scoreboard;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
@@ -310,11 +342,11 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Scoreboard;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;

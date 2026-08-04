@@ -25,6 +25,8 @@ Deployment target: iOS/iPadOS 26.1.
 Framework style: UIKit app, with SwiftUI hosted only where useful for rolling
 numeric text.
 External dependencies: none.
+Export compliance: the app does not use non-exempt encryption; generated
+Info.plists set `ITSAppUsesNonExemptEncryption` to `NO`.
 
 ## Build and Run
 
@@ -48,29 +50,71 @@ The phone is a shared board in the middle of a real table.
   reads it. Do not infer rotation from a cell's screen position.
 - Side players read sideways, top players read upside-down from the phone's
   point of view, and each badge/gesture should respect that orientation.
-- Focused commander-damage mode temporarily rotates every board number toward
-  the selected recipient, regardless of each source cell's normal seat rotation.
+- Focused commander-damage mode rotates only commander-source damage totals
+  toward the selected recipient. Life totals keep their normal seat rotations,
+  including while they ripple out and while the recipient remains visible.
 
 When adding layout, gesture, or badge behavior, route orientation through the
-existing helpers (`PlayerCellView.playerFraction`, `PlayerLayoutIconView`'s
-rotation handling, and `PlayerSeat.rotationDegrees`) instead of comparing raw
-screen coordinates.
+rotated content coordinate space, `PlayerLayoutIconView`'s rotation handling,
+and `PlayerSeat.rotationDegrees` instead of comparing raw screen coordinates.
 
 ## Current User Experience
 
 - The app starts a 4-player `fourA` game by default.
+- The launch screen, app window, and game board use a solid black background.
 - Two-player games start at 20 life; all other layouts start at 40.
-- Tap a player's left/right side for life -1/+1, registered on touch-down.
-- Hold a side after 0.5s to repeat in +/-10 steps every 0.35s.
-- Tap the fixed center band over a life total to enter commander-damage mode
-  with that player as the recipient.
-- Hold the fixed center band over the number for 0.5s to open exact life input.
+- Tap a player's minus/plus region for life -1/+1, registered on touch-down.
+  Each target spans the full player-cell height, is at least the 20pt icon plus
+  20pt inline padding on both sides, and expands outward to the cell edge when
+  more space is available.
+- Applied increments play `ns_button_1`; applied decrements play `ns_button_2`.
+  Keypad keys, seat-color chips, layout choices, and debug-toolbar buttons play
+  `ns_button_3` on touch-down. Sounds use an ambient audio session, respect the
+  silent switch, and mix with other audio.
+- Every programmatic adjustment-icon visibility change uses the same 0.16-second transition:
+  minus and plus fade while scaling between 50% and 100%. This applies to edit
+  mode, commander transitions, and first-player selection. Reset swipes use the
+  interactive version of the same coupled fade-and-scale profile.
+- Lighthouse landing plays `tonehigh` with the selected-player shake. Commander
+  ripple entry and exit play `short`; exact-life editor entry and exit play
+  `long`. Commander and edit entry cues play two semitones above their source
+  WAVs; their exit cues play at the original pitch. Entering the post-reset
+  player/layout chooser plays `tonelow`.
+- During the lighthouse sweep, each revolution is divided into one evenly
+  spaced `ns_button_5` beat per active seat. This regular angular rhythm ignores
+  irregular seat geometry while naturally compressing in time as the beam
+  accelerates; pitch rises from -600 toward +1200 cents along the same easing
+  curve. Active sweep voices stop immediately before the landing sound.
+- Hold a side after 0.5s to repeat in +/-10 steps every 0.35s. The immediate
+  touch-down +/-1 combines with a compensating first hold step of +/-9, so the
+  initial held change totals exactly +/-10 rather than +/-11.
+- Life totals at 0 or below dim to 30% opacity. A decrement hold that begins
+  above 0 stops at exactly 0; a fresh gesture may cross below 0 and continue.
+- Life totals also dim to 30% opacity when a player reaches 10 poison counters,
+  matching the defeated appearance for zero life or lethal commander damage.
+- Tap anywhere within a rendered life total to enter commander-damage mode with
+  that player as the recipient.
+- Hold anywhere within the rendered life total for 0.5s to open exact life input.
 - Exact life input includes six OKLCH dot-shaped seat-color chips above the life total:
   colorless, white, blue, black, red, and green. Colorless is exclusive; one
   through five mana colors can be combined, and the choice stays with that
-  player for the current game. Colorless is fixed pure RGB white; white mana is
-  a deep, saturated cream-yellow; and black mana is a light muted purple.
-- Tap the life total in the input overlay to confirm.
+  player for the current game. The colorless picker chip uses pure RGB white at
+  the app's 30% dimmed opacity; colorless life dots remain full white. White
+  mana is a deep, saturated cream-yellow; and black mana is a light muted
+  purple.
+- Exact life input also includes a poison-counter control below the life total,
+  aligned with the keypad's bottom row in side-player layouts. At zero it shows
+  the 20pt poison icon and the standard dimmed plus icon; after the first
+  increment it also reveals a dimmed minus icon and a Karl rolling count.
+  Saving commits poison with the other edit-session changes, while canceling
+  discards it. Players with one or more poison counters show the same compact
+  poison icon and count below their normal on-board life total.
+- The exact-life keypad ends with ×, 0, and a checkmark. The checkmark (or
+  tapping the life total) commits the pending life and seat-color changes. ×
+  exits edit mode and discards every change made during that editing session.
+  When canceling after typing, the pending number dissolves out while the saved
+  number dissolves back in and travels through the editor-to-board dot hero.
+  The × and checkmark scale up on press without changing opacity.
 - Swipe across the board to reset. A committed reset wipes cells off, shows the
   layout selector, then starts a clockwise lighthouse sweep after selection.
 - The lighthouse beam rotates clockwise from the board center, flashing each
@@ -78,57 +122,88 @@ screen coordinates.
   on a random starting player.
 - While the beam is sweeping, every non-dot element is fully invisible:
   adjustment icons, toolbar controls, and debug skeletons.
-  Their hit regions stay active so any touch can still finish the animation.
+  A root interaction layer remains active so any touch can fast-forward the
+  animation without reaching those controls.
 - The chosen player's life stays bright while every other life total begins
-  fully invisible and fades from zero to full opacity over three seconds. Any
-  screen interaction completes that fade with a short spring without consuming
-  the interaction.
+  fully invisible and fades from zero to full opacity over three seconds. A
+  screen interaction completes that fade with a short spring and is consumed.
 - Entering commander mode sends a radial dot ripple from the recipient's life
   total. Every other cell becomes the damage dealt by that source player to the
-  recipient, starts at zero, and rotates to face the recipient.
+  recipient, starts at zero, and rotates to face the recipient. The outgoing
+  life totals retain their normal seat rotations throughout ripple-out.
 - Source damage totals use the board's normal left/right -/+ controls and repeat
   behavior. Each applied damage point also subtracts one recipient life; reducing
   damage restores the same amount of life.
+- Commander-damage totals at the lethal 21-point threshold or above dim to 30%
+  opacity, and the recipient's normal life total remains dim after leaving
+  commander mode. An increment hold that begins below 21 stops at exactly 21;
+  a fresh gesture may cross 21 and continue.
+- VoiceOver marks a life total as defeated when it is at or below 0 or the
+  player has lethal commander damage or 10 poison counters, and marks
+  commander-source totals at or above 21 as lethal.
 - The recipient's live life total stays visible at 30% opacity without adjust
-  controls. Tap its fixed center band to exit with the reverse radial ripple.
+  controls. Tap the rendered number to exit with the reverse radial ripple.
 - Commander damage is assigned only in focused commander mode, not in the exact
   life input overlay.
-- The bottom-right toolbar has two buttons: dot-font cycle and grid skeleton.
+- The bottom-right debug toolbar has two buttons: dot-font cycle and layout
+  grid/tap targets. It remains visible and functional on the board, layout
+  selector, and exact-life editor, but still hides during the lighthouse sweep.
 - The dot-font cycle advances through tall, narrow, normal, wide, xwide, and
-  xxwide bitmap styles.
-- The grid skeleton draws a green border at the physical screen edges, green
-  board/cell outlines, and orange region outlines. Orange follows the full tap
-  geometry, not the visual content padding: each cell is divided into a fixed
-  center interaction band and the surrounding -/+ regions.
+  xxwide bitmap styles. Their exact grids are tall 3 by 7, narrow 3 by 5,
+  normal 4 by 5, wide 5 by 5, xwide 6 by 5, and xxwide 7 by 5.
+- New 5- and 6-player games default to the narrow 3 by 5 dot font. New 2- through
+  4-player games default to the wide 5 by 5 dot font. Cycling the font on the
+  layout selector overrides that default for the next game; the toolbar can
+  also cycle fonts on the board and in the exact-life editor.
+- Digit-count changes relayout the editable number immediately and relayout its
+  board cell and adjustment controls when editing closes. Every value uses the
+  game's active dot font, regardless of its number of digits.
+- The first keypad press dissolves every dot of the existing life total while
+  the replacement digit dissolves in. Later presses animate retained leading
+  digits smoothly into their newly fitted positions and sizes. Replaced and
+  appended digits cross-dissolve at dot level, coupling opacity with scale and
+  stable per-dot timing variation.
+- The layout-debug toggle draws a translucent blue 20pt rhythm grid and green
+  border at the physical screen edges on every screen. It also draws green
+  layout-region outlines and orange tap targets for board cells, selector
+  buttons, life-editor controls, and keypad keys. Board orange geometry divides
+  each cell into full-height decrement, rendered-number, and increment targets.
 
 ## Source Layout
 
 Entry point and root controller:
 
-- `lifetrack/AppDelegate.swift` - `@main`, provides the scene configuration.
-- `lifetrack/SceneDelegate.swift` - creates the `UIWindow`, installs
-  `GameViewController`, and disables the idle timer.
+- `lifetrack/AppDelegate.swift` - `@main`, registers the Karl fonts, disables
+  the idle timer, and provides the scene configuration.
+- `lifetrack/SceneDelegate.swift` - creates the black `UIWindow`, installs
+  `GameViewController`, forces dark appearance, and prepares app audio.
+- `lifetrack/LaunchScreen.storyboard` - supplies the explicit solid-black
+  launch screen selected by `UILaunchStoryboardName`.
 - `lifetrack/GameViewController.swift` - owns active `PlayerLayout`, player
   state, editing state, toolbar, reset flow, `GameBoardView`,
   `LifeInputOverlay`, `LayoutSelectorView`, and the root screen-edge skeleton
   border shown in grid mode.
+- `lifetrack/AppSoundPlayer.swift` - preloads the bundled interaction WAVs and
+  plays them through a shared `AVAudioEngine` with overlapping, independently
+  pitch-adjustable voices.
 
 Models:
 
-- `lifetrack/Models/Player.swift` - `Player`, default life 40, and lethal
-  commander damage 21, plus the player's selected seat colors.
+- `lifetrack/Models/Player.swift` - `Player`, default life 40, lethal commander
+  damage 21, lethal poison 10, and the player's selected seat colors.
 - `lifetrack/Models/SeatColor.swift` - the six seat-color choices, their OKLCH
   coordinates, deterministic per-dot variance, neutral-center interpolation,
   gamut fitting, and sRGB output.
 - `lifetrack/Models/PlayerLayout.swift` - all layout variants, `PlayerSeat`,
   `BoardInsets`, and selector display order.
-- `playercounts/*.svg` - canonical source artwork for seat dots. When changing a
-  seating layout, update the SVG first, then the Swift seat data.
+- `playercounts/*.svg` - canonical source artwork for schematic seat dots. When
+  changing a seating icon, update the SVG first, then its Swift `iconCenter`
+  data. Actual board geometry remains independently defined by `cellRect`.
 
 Main board and cell views:
 
-- `lifetrack/Views/GameBoardView.swift` - projects `cellRect` to board slots,
-  applies inter-cell gutters, computes uniform board dot size, owns reset swipe,
+- `lifetrack/Views/GameBoardView.swift` - projects `cellRect` to adjoining board
+  slots, computes uniform board dot size, owns reset swipe,
   focused commander mode, radial transitions, first-player selection, and debug
   skeleton layers.
 - `lifetrack/Views/PlayerCellView.swift` - one player's life area, rotated
@@ -146,11 +221,14 @@ Input and selector:
   each overlay dot starts at its corresponding position in the originating
   cell's visual dot pattern and animates independently into the final grid slot;
   dismissal reverses the same per-dot motion back to the board.
+- `lifetrack/Views/PoisonCounterView.swift` - reusable poison icon/count badge
+  and the edit-mode decrement/increment control; its count uses the shared
+  SwiftUI rolling-number transition and `Typography.lifeDelta` token.
 - `lifetrack/Views/SeatColorPickerView.swift` - the six accessible dot-shaped
   chips used to choose an exclusive colorless seat or any mana-color mix.
-- `lifetrack/Views/NumberPadView.swift` - 3 by 4 number pad (`1...9`, clear
-  `×`, `0`, backspace) and key frames for overlay skeleton drawing. Tapping the
-  life total confirms/dismisses the overlay.
+- `lifetrack/Views/NumberPadView.swift` - 3 by 4 number pad (`1...9`, cancel
+  `×`, `0`, done checkmark) and key frames for overlay skeleton drawing.
+  Tapping the life total also confirms/dismisses the overlay.
 - `lifetrack/Views/LayoutSelectorView.swift` - full-screen 2-column by 4-row
   selector for all player-count/layout variants.
 
@@ -162,7 +240,7 @@ Dot and typography systems:
   including deterministic OKLCH color assignment, per-dot edit heroes,
   lighthouse-beam projection, and additive organic shake.
 - `lifetrack/Views/DotNumberView.swift` - number splitting, dot-size fitting,
-  digit layout, font-change rebuilds, sweep/reset forwarding.
+  digit layout, global font-change rebuilds, and sweep/reset forwarding.
 - `lifetrack/Views/RollingNumberText.swift` - hosted SwiftUI rolling numeric
   text used by the transient life-delta readout.
 - `lifetrack/Views/Karl.swift` - bundled Karl font factories.
@@ -171,41 +249,79 @@ Dot and typography systems:
 
 Assets/resources:
 
+- Selected WAVs under `scorebordsounds/` are bundled interaction sounds:
+  `ns_button_1`,
+  `ns_button_2`, and `ns_button_3` cover increment, decrement, and standard
+  buttons; `ns_button_5` provides the seat-count lighthouse rhythm; and
+  `tonehigh`, `tonelow`, `short`, and `long` cover lighthouse landing, reset
+  chooser entry, commander transitions, and edit transitions. `ns_button_4`
+  exists as an unused source file and is not included in the app target.
+- `IconPlus.svg`, `IconMinus.svg`, `IconCheckmark.svg`, `IconCross.svg`, and
+  `IconPoison.svg` at the repository root are the canonical source artwork for
+  the board adjustment controls, exact-life done/cancel controls, and poison
+  badge. Their asset-catalog copies keep the existing runtime names `IconPlus`,
+  `IconMinus`, `icon-checkmark`, `icon-delete`, and `icon-poison` respectively.
+- `appicon.icon` - canonical Icon Composer source used for the Home Screen,
+  TestFlight, and App Store icon. Its `Assets/toplayer.png` is the 1024 by 1024
+  white dot-matrix `40` rendered in the app's default wide font. Keep the synced
+  copy under `lifetrack/Assets.xcassets/appicon` identical.
 - `lifetrack/Assets.xcassets/IconPlus.imageset` and
   `lifetrack/Assets.xcassets/IconMinus.imageset` - shared app-wide +/- glyphs.
 - `lifetrack/Assets.xcassets/icon-*.imageset` - remaining action icons.
+  `icon-poison` is the 20pt poison-counter badge used in edit mode and on the
+  board.
 - `lifetrack/Resources/Fonts` - Karl font files.
 
 ## Layout System
 
-`PlayerLayout` defines each seat in normalized board coordinates. `GameBoardView`
-projects those unit rects into its bounds. Any edge that is not on the board
-boundary is inset by `BoardInsets.interCellGap / 2`, currently 10pt, producing a
-20pt gutter between neighboring slots.
+The spatial system has two coordinated layers:
+
+- A 4pt base unit governs fixed measurements. The physical playable board uses
+  8pt side insets and 52pt top/bottom insets. The visible major rhythm is five
+  base units, or 20pt. Board dots target 18pt on a 20pt pitch; adjustment icons,
+  icon spacing, icon target padding, and the debug grid use that same 20pt step.
+- `PlayerLayout.cellRect` defines responsive seat geometry in normalized 0...1
+  board coordinates. `GameBoardView` projects those fractions into the playable
+  board on each screen size. Adjacent rectangles share their normalized edge
+  with no inter-seat gutter, so both their visible regions and tap targets meet
+  exactly. Fractions may vary by layout (halves, thirds, fifths, or sixths)
+  while all fixed padding and visual rhythm stay on the shared point grid.
+
+The debug overlay exposes both layers: blue lines show the physical 20pt rhythm,
+green lines show screen/layout regions, and orange lines show actual tap targets.
+`LayoutGrid` and `BoardInsets` in `PlayerLayout.swift` are the canonical fixed
+constants; normalized `cellRect` values are the canonical responsive grid.
 
 The supported layouts are:
 
 - `two` - top and bottom.
 - `three` - two left-edge players plus one full-height right-edge player.
 - `fourA` - 2 by 2 corners.
-- `fourB` - diamond layout.
-- `fiveA` - 2 by 2 upper cluster plus one full-width bottom strip.
+- `fourB` - equal-area diamond layout with quarter-height full-width top/bottom
+  seats and a half-height middle band split between the side seats.
+- `fiveA` - a 5-row grid with two-row split upper/middle bands and a one-row
+  full-width bottom seat.
 - `fiveB` - three left-edge thirds plus two right-edge halves.
 - `sixA` - 3 by 2 grid.
-- `sixB` - full-width top/bottom bands with two middle split bands.
+- `sixB` - a 6-row grid with one-row full-width top/bottom bands and two-row
+  split middle bands, giving the side seats enough height to separate their
+  adjustment controls. Its selector artwork places seat rows at evenly spaced
+  y positions 4, 12, 20, and 28 in the 32-unit icon viewbox.
 
 The board normally targets 18pt life dots. `GameBoardView.uniformDotSize(for:)`
 asks each slot how large a two-digit value can fit after accounting for rotation,
-`PlayerCellView.contentInset`, and `verticalInset`. Every cell then receives the
-minimum fitting size, capped at 18pt, so board dots stay uniform. The input
-overlay caps its editable life-total dots at 28pt so the number stays prominent
-without overwhelming the keypad.
+the full-height adjustment regions, and `verticalInset`. Every cell then receives
+the minimum fitting size, capped at 18pt, so board dots stay uniform. Individual
+numbers scale down further when their digit count needs more room between the
+minimum-width adjustment targets. The input overlay caps its editable life-total
+dots at 28pt so the number stays prominent without overwhelming the keypad.
 
-The seat-color chips use that same live dot size and corner-radius ratio, with
-one empty dot-width between adjacent chips. In side-player input layouts, their
-centerline matches the first keypad row while the life total occupies the
-remaining three-row band. Selection adds a 2pt white outline outside a 1pt clear
-gap without changing chip geometry.
+The seat-color chips use that same live dot size and corner-radius ratio. Their
+row spans exactly the rendered width of a two-digit value in the default wide
+5 by 5 font, matching the outer edges of the default `40` life total. In
+side-player input layouts, their centerline matches the first keypad row while
+the life total occupies the remaining three-row band. Selection adds a 2pt
+white outline outside a 1pt clear gap without changing chip geometry.
 
 Seat colors are distributed deterministically across each digit so the same
 player and palette do not flicker or reshuffle during ordinary animation. Each
@@ -230,21 +346,24 @@ Current content margins:
 
 - `contentInset = 12` left/right in player reading space.
 - `verticalInset = 8` top/bottom in player reading space.
-- `editZoneWidth = 100`, centered on the full cell axis for commander entry and
-  exact life editing.
 
 Important touch behavior:
 
-- Life zones are computed from full `PlayerCellView.bounds`, not the inset
-  content container.
-- The fixed center interaction zone is centered along the player's
-  left-to-right axis. A tap enters commander mode; a 0.5-second hold opens exact
-  life input.
-- The +/- zones fill the rest of the cell outside that center band.
-- `playerFraction(at:)` maps a point to the player's left-to-right axis for all
-  four rotations. Use it instead of direct `x` checks.
+- The life-total interaction zone matches the rendered number's width and spans
+  the full player-cell height. A tap enters commander mode; a 0.5-second hold
+  opens exact life input.
+- Each adjustment target spans the full player-cell height, reserves at least
+  60pt of player-facing width for its 20pt icon and 20pt inline padding, and
+  expands from the number to the corresponding cell edge when space allows.
+- Number fitting reserves both minimum adjustment widths and scales the life
+  total down when needed, so no adjustment target extends beyond its cell.
+- Targets are defined in the player's rotated content coordinate space, so
+  their visual and interactive geometry stays aligned for every seat rotation.
 - Center taps commit on touch-up, so a reset swipe beginning over the number
   cancels the tap instead of entering commander mode.
+- A nonzero poison badge uses the open space below the rendered life total in
+  player reading space without moving or rescaling the life total. The badge
+  rotates with the player's normal seat orientation.
 
 ## Animation and Haptics
 
@@ -272,7 +391,12 @@ Important touch behavior:
   dots do not collapse in perfectly uniform rings.
   The incoming ripple begins halfway through the outgoing wave delay (0.16
   seconds after it starts), so both number states share the midpoint. Entry
-  expands center-out; exit reverses the timing and collapses edge-in.
+  expands center-out; exit reverses the timing and collapses edge-in. On exit,
+  focused recipient orientation clears at that midpoint before the incoming
+  life totals appear, so they return to their normal seat rotations during the
+  transition instead of after it. Rotation belongs to the displayed content:
+  outgoing and recipient life totals retain their seat angles, while only
+  commander-source damage adopts the recipient-facing angle.
 - `.decreasing` rolls top-to-bottom; `.increasing` rolls bottom-to-top.
 - Animated changes use `.beginFromCurrentState`, so rapid taps retarget the
   current animation instead of queueing delayed rolls.
@@ -290,10 +414,16 @@ Important touch behavior:
   softening uniform neighboring triggers without introducing flicker. The sweep
   then lands on a random player. Unlit dots are fully invisible, and non-winners
   fade from zero to full brightness over three seconds.
-- Any touch cancels the remaining first-player sweep/fade and restores every
-  life total with a short spring while allowing the original interaction.
+- A touch during the first-player sweep is consumed and fast-forwards to the
+  already chosen seat through the normal landing, preserving its shake, heavy
+  haptic, and announcement. Before that landing begins, the skip path normalizes
+  the winner's dot transforms to the same natural-scale handoff produced by a
+  completed sweep; the shake animation itself is unchanged. A touch during the
+  following fade is also consumed and completes the reveal. Neither touch
+  activates an underlying game or toolbar control.
 - Player controls, toolbar chrome, and debug skeletons snap invisible when the
-  lighthouse starts and return with a short spring as soon as it lands.
+  lighthouse starts and return as soon as it lands. The minus and plus controls
+  use their shared fade-and-scale visibility transition in both directions.
 - The selected first player's active dots receive a strong independent-dot
   shake on landing. Life and commander-damage shake intensity follows the
   absolute accumulated value in the transient +/- readout: +/-1 starts with a
