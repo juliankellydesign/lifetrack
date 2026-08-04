@@ -24,7 +24,7 @@ class GameBoardView: UIView {
   /// Width over which the leading edge of the swipe blends from "natural" to "wiped".
   private static let sweepFeather: CGFloat = 60
   private static let firstPlayerDimAlpha: CGFloat = 0
-  private static let firstPlayerDimScale: CGFloat = 0.01
+  private static let firstPlayerDimScale = DotDigitView.hiddenScale
   private static let firstPlayerPeakScale: CGFloat = 1
   private static let firstPlayerFadeDuration: TimeInterval = 3
   private static let firstPlayerSweepDuration: TimeInterval = 4.2

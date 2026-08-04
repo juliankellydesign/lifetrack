@@ -22,6 +22,7 @@ class DotDigitView: UIView {
   private static let keypadDissolveDuration: TimeInterval = 0.22
   private static let keypadDissolveMaximumDelay: TimeInterval = 0.07
   private static let keypadDissolveOutDuration: TimeInterval = 0.3
+  static let hiddenScale: CGFloat = 0.01
 
   /// Dot corner radius as a fraction of dot size, so roundness stays constant
   /// as dots scale (board at 18pt vs. the larger life-input overlay dots).
@@ -53,8 +54,7 @@ class DotDigitView: UIView {
       dot.backgroundColor = .white
       dot.layer.cornerRadius = Self.cornerRadius(forDotSize: dotSize)
       dot.layer.cornerCurve = .continuous
-      dot.transform = CGAffineTransform(scaleX: 0.01, y: 0.01)
-      dot.alpha = 0
+      setDotAppearance(dot, alpha: 0, scale: Self.hiddenScale)
       addSubview(dot)
       dotViews.append(dot)
       dotTimingNoise.append(CGFloat.random(in: -1...1))
@@ -120,6 +120,15 @@ class DotDigitView: UIView {
     return Int(truncatingIfNeeded: value)
   }
 
+  private func setDotAppearance(
+    _ dot: UIView,
+    alpha: CGFloat,
+    scale: CGFloat
+  ) {
+    dot.alpha = alpha
+    dot.transform = CGAffineTransform(scaleX: scale, y: scale)
+  }
+
   /// Animated changes — including rapid taps — play the staggered spring roll.
   /// The springs use `.beginFromCurrentState`, so a tap landing mid-roll just
   /// retargets the dots toward the latest digit from wherever they are, keeping
@@ -128,8 +137,7 @@ class DotDigitView: UIView {
     let pattern = font.pattern(for: digit)
     // If the font changed since `configure`, our dot views are stale (wrong
     // count). Bail — a relayout will rebuild and repaint at the new size.
-    guard pattern.count == dotViews.count,
-        dotTimingNoise.count == dotViews.count else { return }
+    guard pattern.count == dotViews.count else { return }
     let oldPattern: [Bool]? = currentDigit.map { font.pattern(for: $0) }
     currentDigit = digit
 
@@ -139,8 +147,11 @@ class DotDigitView: UIView {
       for (i, dot) in dotViews.enumerated() {
         dot.layer.removeAllAnimations()
         let active = pattern[i]
-        dot.transform = active ? .identity : CGAffineTransform(scaleX: 0.01, y: 0.01)
-        dot.alpha = active ? 1 : 0
+        setDotAppearance(
+          dot,
+          alpha: active ? 1 : 0,
+          scale: active ? 1 : Self.hiddenScale
+        )
       }
       return
     }
@@ -154,13 +165,12 @@ class DotDigitView: UIView {
 
       let row = i / font.columns
       let delay = direction?.delay(forRow: row, rowCount: font.rows) ?? 0
-      let scale: CGAffineTransform = isActive ? .identity : CGAffineTransform(scaleX: 0.01, y: 0.01)
-      let alpha: CGFloat = isActive ? 1.0 : 0.0
+      let scale = isActive ? 1.0 : Self.hiddenScale
+      let alpha = isActive ? 1.0 : 0.0
 
       UIView.animate(withDuration: Self.animationDuration, delay: delay, usingSpringWithDamping: 0.7,
                initialSpringVelocity: 0, options: .beginFromCurrentState) {
-        self.dotViews[i].transform = scale
-        self.dotViews[i].alpha = alpha
+        self.setDotAppearance(self.dotViews[i], alpha: alpha, scale: scale)
       }
     }
   }
@@ -191,13 +201,16 @@ class DotDigitView: UIView {
     guard pattern.count == dotViews.count else { return }
     for index in dotViews.indices where pattern[index] {
       dotViews[index].layer.removeAllAnimations()
-      dotViews[index].alpha = 0
-      dotViews[index].transform = CGAffineTransform(scaleX: 0.01, y: 0.01)
+      setDotAppearance(
+        dotViews[index],
+        alpha: 0,
+        scale: Self.hiddenScale
+      )
     }
   }
 
   func animateKeypadDissolveIn() {
-    animateKeypadDissolve(appearing: true)
+    animateKeypadDotsIn()
   }
 
   func animateKeypadDissolveOut(completion: @escaping () -> Void) {
@@ -212,6 +225,10 @@ class DotDigitView: UIView {
       return
     }
 
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    CATransaction.setCompletionBlock(completion)
+
     for index in dotViews.indices where pattern[index] {
       let dot = dotViews[index]
       let presentation = dot.layer.presentation() ?? dot.layer
@@ -221,18 +238,14 @@ class DotDigitView: UIView {
       let unitNoise = (dotTimingNoise[index] + 1) / 2
       let delay = TimeInterval(unitNoise) * Self.keypadDissolveMaximumDelay
 
-      CATransaction.begin()
-      CATransaction.setDisableActions(true)
-      dot.alpha = 0
-      dot.transform = CGAffineTransform(scaleX: 0.01, y: 0.01)
-      CATransaction.commit()
+      setDotAppearance(dot, alpha: 0, scale: Self.hiddenScale)
 
       let opacity = CABasicAnimation(keyPath: "opacity")
       opacity.fromValue = fromOpacity
       opacity.toValue = 0
       let scale = CABasicAnimation(keyPath: "transform.scale")
       scale.fromValue = fromScale
-      scale.toValue = 0.01
+      scale.toValue = Self.hiddenScale
       let group = CAAnimationGroup()
       group.animations = [opacity, scale]
       group.duration = Self.keypadDissolveOutDuration
@@ -241,17 +254,10 @@ class DotDigitView: UIView {
       group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
       dot.layer.add(group, forKey: "keypad-dissolve-out")
     }
-
-    DispatchQueue.main.asyncAfter(
-      deadline: .now()
-        + Self.keypadDissolveOutDuration
-        + Self.keypadDissolveMaximumDelay
-    ) {
-      completion()
-    }
+    CATransaction.commit()
   }
 
-  private func animateKeypadDissolve(appearing: Bool) {
+  private func animateKeypadDotsIn() {
     guard let currentDigit else { return }
     let pattern = font.pattern(for: currentDigit)
     guard pattern.count == dotViews.count,
@@ -269,12 +275,7 @@ class DotDigitView: UIView {
           .curveEaseInOut
         ]
       ) {
-        self.dotViews[index].alpha = appearing ? 1 : 0
-        let scale: CGFloat = appearing ? 1 : 0.01
-        self.dotViews[index].transform = CGAffineTransform(
-          scaleX: scale,
-          y: scale
-        )
+        self.setDotAppearance(self.dotViews[index], alpha: 1, scale: 1)
       }
     }
   }
@@ -308,8 +309,7 @@ class DotDigitView: UIView {
     for (index, dot) in dotViews.enumerated() {
       dot.layer.removeAllAnimations()
       guard pattern[index] else {
-        dot.transform = CGAffineTransform(scaleX: 0.01, y: 0.01)
-        dot.alpha = 0
+        setDotAppearance(dot, alpha: 0, scale: Self.hiddenScale)
         continue
       }
 
@@ -365,7 +365,6 @@ class DotDigitView: UIView {
         options: [.beginFromCurrentState, .allowUserInteraction]
       ) {
         dot.transform = .identity
-        dot.alpha = 1
       }
     }
   }
@@ -571,7 +570,7 @@ class DotDigitView: UIView {
   /// Apply a positional sweep fade. For each dot, we compute how far past
   /// the swipe's leading edge it sits, in `reference` coordinates, then
   /// linearly interpolate from its natural state (alpha 1 / scale 1 if
-  /// active) to the "off" state (alpha 0 / scale 0.01) over `feather` pts.
+  /// active) to the hidden dot state over `feather` pts.
   func applySweep(
     in reference: UIView,
     axisIsHorizontal: Bool,
@@ -581,8 +580,7 @@ class DotDigitView: UIView {
   ) {
     guard let digit = currentDigit else { return }
     let pattern = font.pattern(for: digit)
-    guard pattern.count == dotViews.count,
-        dotTimingNoise.count == dotViews.count else { return }
+    guard pattern.count == dotViews.count else { return }
     for (i, dot) in dotViews.enumerated() {
       let p = reference.convert(
         CGPoint(x: dot.bounds.midX, y: dot.bounds.midY),
@@ -593,11 +591,11 @@ class DotDigitView: UIView {
       let progress = max(0, min(1, signed / feather))
 
       let active = pattern[i]
-      let baseScale: CGFloat = active ? 1 : 0.01
-      let scale = baseScale + (0.01 - baseScale) * progress
+      let baseScale = active ? 1.0 : Self.hiddenScale
+      let scale = baseScale
+        + (Self.hiddenScale - baseScale) * progress
       let alpha: CGFloat = (active ? 1 : 0) * (1 - progress)
-      dot.transform = CGAffineTransform(scaleX: scale, y: scale)
-      dot.alpha = alpha
+      setDotAppearance(dot, alpha: alpha, scale: scale)
     }
   }
 
@@ -623,8 +621,7 @@ class DotDigitView: UIView {
 
     for (i, dot) in dotViews.enumerated() {
       guard pattern[i] else {
-        dot.transform = CGAffineTransform(scaleX: 0.01, y: 0.01)
-        dot.alpha = 0
+        setDotAppearance(dot, alpha: 0, scale: Self.hiddenScale)
         continue
       }
 
@@ -654,8 +651,7 @@ class DotDigitView: UIView {
       let alpha = dimAlpha + (1 - dimAlpha) * intensity
       let scale = dimScale + (peakScale - dimScale) * intensity
 
-      dot.transform = CGAffineTransform(scaleX: scale, y: scale)
-      dot.alpha = alpha
+      setDotAppearance(dot, alpha: alpha, scale: scale)
     }
   }
 
@@ -676,13 +672,13 @@ class DotDigitView: UIView {
     for (i, dot) in dotViews.enumerated() {
       let isActive = pattern[i]
       let targetAlpha: CGFloat = isActive ? alpha : 0
-      let targetScale = isActive ? scale : 0.01
+      let targetScale = isActive ? scale : Self.hiddenScale
       let changes = {
-        dot.transform = CGAffineTransform(
-          scaleX: targetScale,
-          y: targetScale
+        self.setDotAppearance(
+          dot,
+          alpha: targetAlpha,
+          scale: targetScale
         )
-        dot.alpha = targetAlpha
       }
 
       if animated {
@@ -714,12 +710,12 @@ class DotDigitView: UIView {
     }
   }
 
-  /// Snap every dot to the off state (scale 0.01, alpha 0). Pair with
+  /// Snap every dot to the hidden state. Pair with
   /// `resetSweep(animated: true)` to play a digit roll-in from blank.
   func snapToOff() {
     for dot in dotViews {
-      dot.transform = CGAffineTransform(scaleX: 0.01, y: 0.01)
-      dot.alpha = 0
+      dot.layer.removeAllAnimations()
+      setDotAppearance(dot, alpha: 0, scale: Self.hiddenScale)
     }
   }
 
@@ -758,8 +754,7 @@ class DotDigitView: UIView {
         initialSpringVelocity: 0,
         options: .beginFromCurrentState
       ) {
-        dot.transform = CGAffineTransform(scaleX: 0.01, y: 0.01)
-        dot.alpha = 0
+        self.setDotAppearance(dot, alpha: 0, scale: Self.hiddenScale)
       }
     }
   }
@@ -799,8 +794,7 @@ class DotDigitView: UIView {
         initialSpringVelocity: 0,
         options: .beginFromCurrentState
       ) {
-        dot.transform = .identity
-        dot.alpha = 1
+        self.setDotAppearance(dot, alpha: 1, scale: 1)
       }
     }
   }
@@ -923,7 +917,7 @@ class DotDigitView: UIView {
     guard pattern.count == dotViews.count else { return }
     for (i, dot) in dotViews.enumerated() {
       let active = pattern[i]
-      let scale: CGAffineTransform = active ? .identity : CGAffineTransform(scaleX: 0.01, y: 0.01)
+      let scale = active ? 1.0 : Self.hiddenScale
       let alpha: CGFloat = active ? 1 : 0
       if animated {
         let row = i / font.columns
@@ -931,15 +925,13 @@ class DotDigitView: UIView {
           forRow: row,
           rowCount: font.rows
         )
-        UIView.animate(withDuration: 0.3, delay: delay,
+        UIView.animate(withDuration: Self.animationDuration, delay: delay,
                  usingSpringWithDamping: 0.7, initialSpringVelocity: 0,
                  options: .beginFromCurrentState) {
-          dot.transform = scale
-          dot.alpha = alpha
+          self.setDotAppearance(dot, alpha: alpha, scale: scale)
         }
       } else {
-        dot.transform = scale
-        dot.alpha = alpha
+        setDotAppearance(dot, alpha: alpha, scale: scale)
       }
     }
   }
