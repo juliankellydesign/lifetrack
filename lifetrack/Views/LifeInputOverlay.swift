@@ -47,6 +47,7 @@ class LifeInputOverlay: UIView {
   private var commanderDamage: [Int: Int] = [:]
   private var seatColors: Set<SeatColor> = [.colorless]
   private var poisonCounters = 0
+  private var initialPoisonCounters = 0
   private var initialSeatColors: Set<SeatColor> = [.colorless]
   private var colorSeed = 0
   private(set) var rotation: CGFloat = 0
@@ -116,6 +117,7 @@ class LifeInputOverlay: UIView {
     self.commanderDamage = commanderDamage
     self.seatColors = seatColors.isEmpty ? [.colorless] : seatColors
     self.poisonCounters = max(0, poisonCounters)
+    initialPoisonCounters = self.poisonCounters
     initialSeatColors = self.seatColors
     self.colorSeed = colorSeed
     self.rotation = rotation
@@ -125,9 +127,9 @@ class LifeInputOverlay: UIView {
     backgroundColor = UIColor.black.withAlphaComponent(0)
     numberPadView.alpha = 0
     colorPickerView.alpha = 0
-    poisonCounterView.alpha = 0
     colorPickerView.prepare(colors: self.seatColors)
     poisonCounterView.prepare(value: self.poisonCounters, isInteractive: true)
+    poisonCounterView.setVisible(false, animated: false)
     dotNumberView.setSeatColors(self.seatColors, seed: colorSeed, animated: false)
 
     dotNumberView.finishEditHero()
@@ -189,7 +191,10 @@ class LifeInputOverlay: UIView {
     backgroundColor = .black
     numberPadView.alpha = 1
     colorPickerView.alpha = 1
-    poisonCounterView.alpha = 1
+  }
+
+  func setPoisonCounterVisible(_ visible: Bool, animated: Bool) {
+    poisonCounterView.setVisible(visible, animated: animated)
   }
 
   /// Fade chrome away. Call inside an animation block.
@@ -197,7 +202,6 @@ class LifeInputOverlay: UIView {
     backgroundColor = UIColor.black.withAlphaComponent(0)
     numberPadView.alpha = 0
     colorPickerView.alpha = 0
-    poisonCounterView.alpha = 0
   }
 
   func finishDismiss() {
@@ -207,11 +211,16 @@ class LifeInputOverlay: UIView {
   }
 
   /// Cancellation keeps the player's model untouched. Restore the original
-  /// visual state as well so the return hero matches the unchanged board.
+  /// visual state so the returning board badge matches the unchanged game.
   func prepareCancellationHero() {
     let replacesTypedNumber = !inputText.isEmpty
     inputText = ""
     seatColors = initialSeatColors
+    poisonCounters = initialPoisonCounters
+    poisonCounterView.prepare(
+      value: poisonCounters,
+      isInteractive: true
+    )
     if replacesTypedNumber {
       dotNumberView.prepareCancellationReplacement(
         lifeTotal,

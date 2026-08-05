@@ -7,7 +7,7 @@ final class PoisonCounterView: UIView {
   var onValueChanged: ((Int) -> Void)?
   private(set) var tapTargetFrames: [CGRect] = []
 
-  private static let iconSize: CGFloat = 20
+  private static let boardIconSize: CGFloat = 20
   private static let buttonWidth: CGFloat = 60
   private static let itemSpacing: CGFloat = 8
   private static let adjustmentIconAlpha: CGFloat = 0.3
@@ -24,6 +24,14 @@ final class PoisonCounterView: UIView {
   private var isInteractive = false
   private var value = 0
 
+  private var iconSize: CGFloat {
+    isInteractive ? NumberPadView.actionIconSize : Self.boardIconSize
+  }
+
+  private var valueStyle: Typography.Style {
+    isInteractive ? Typography.keypadDigit : Typography.lifeDelta
+  }
+
   override init(frame: CGRect) {
     super.init(frame: frame)
     setup()
@@ -37,6 +45,8 @@ final class PoisonCounterView: UIView {
   func prepare(value: Int, isInteractive: Bool) {
     self.value = max(0, value)
     self.isInteractive = isInteractive
+    valueModel.font = valueStyle.swiftUIFont
+    valueModel.lineHeight = valueStyle.lineHeight
     valueModel.value = self.value
     minusButton.isHidden = !isInteractive || self.value == 0
     plusButton.isHidden = !isInteractive
@@ -119,13 +129,39 @@ final class PoisonCounterView: UIView {
     }
   }
 
+  func setVisible(_ visible: Bool, animated: Bool) {
+    if visible {
+      isHidden = false
+    }
+    let changes = {
+      self.setVisibilityProgress(visible ? 1 : 0)
+    }
+
+    guard animated else {
+      UIView.performWithoutAnimation(changes)
+      isHidden = !visible
+      return
+    }
+
+    UIView.animate(
+      withDuration: Self.visibilityDuration,
+      delay: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut],
+      animations: changes
+    ) { finished in
+      if finished, !visible, self.alpha == 0 {
+        self.isHidden = true
+      }
+    }
+  }
+
   override func layoutSubviews() {
     super.layoutSubviews()
 
     let countWidth = value > 0 ? measuredValueWidth() : 0
     let visibleMinusWidth = isInteractive && value > 0 ? Self.buttonWidth : 0
     let visiblePlusWidth = isInteractive ? Self.buttonWidth : 0
-    var contentWidth = visibleMinusWidth + Self.iconSize + countWidth + visiblePlusWidth
+    var contentWidth = visibleMinusWidth + iconSize + countWidth + visiblePlusWidth
     var gaps = 0
     if visibleMinusWidth > 0 { gaps += 1 }
     if countWidth > 0 { gaps += 1 }
@@ -133,8 +169,8 @@ final class PoisonCounterView: UIView {
     contentWidth += CGFloat(gaps) * Self.itemSpacing
 
     var x = bounds.midX - contentWidth / 2
-    let iconY = bounds.midY - Self.iconSize / 2
-    let valueY = bounds.midY - Typography.lifeDelta.lineHeight / 2
+    let iconY = bounds.midY - iconSize / 2
+    let valueY = bounds.midY - valueStyle.lineHeight / 2
     tapTargetFrames = []
 
     if visibleMinusWidth > 0 {
@@ -145,15 +181,15 @@ final class PoisonCounterView: UIView {
 
     poisonIconView.frame = CGRect(
       x: x, y: iconY,
-      width: Self.iconSize, height: Self.iconSize
+      width: iconSize, height: iconSize
     )
-    x += Self.iconSize
+    x += iconSize
 
     if countWidth > 0 {
       x += Self.itemSpacing
       valueView.frame = CGRect(
         x: x, y: valueY,
-        width: countWidth, height: Typography.lifeDelta.lineHeight
+        width: countWidth, height: valueStyle.lineHeight
       )
       x += countWidth
     }
@@ -226,7 +262,14 @@ final class PoisonCounterView: UIView {
 
   private func measuredValueWidth() -> CGFloat {
     let text = "\(value)" as NSString
-    return ceil(text.size(withAttributes: [.font: Typography.lifeDelta.uiFont]).width)
+    return ceil(text.size(withAttributes: [.font: valueStyle.uiFont]).width)
+  }
+
+  func setVisibilityProgress(_ visibility: CGFloat) {
+    let progress = min(1, max(0, visibility))
+    let scale = 0.5 + 0.5 * progress
+    alpha = progress
+    transform = CGAffineTransform(scaleX: scale, y: scale)
   }
 
   private func updateAccessibility() {

@@ -21,7 +21,7 @@ class NumberPadView: UIView {
     [.cancel, .digit(0), .confirm],
   ]
 
-  private static let actionIconSize: CGFloat = 32
+  static let actionIconSize: CGFloat = 32
 
   static let rowSpacing: CGFloat = 10
   static let columnSpacing: CGFloat = 0

@@ -397,6 +397,7 @@ class GameViewController: UIViewController {
       pitch: AppSoundPlayer.modeEntryPitchShift
     )
     overlayView.animateDotNumberViewHeroToFinal()
+    overlayView.setPoisonCounterVisible(true, animated: true)
 
     UIView.animate(
       withDuration: 0.45, delay: 0,
@@ -436,6 +437,9 @@ class GameViewController: UIViewController {
       overlayView.prepareCancellationHero()
     }
     editingIndex = nil
+
+    cell.revealPoisonBadgeAfterEditing()
+    overlayView.setPoisonCounterVisible(false, animated: true)
 
     let cellDotView = cell.dotNumberView
     let cellVisualCenter = view.convert(

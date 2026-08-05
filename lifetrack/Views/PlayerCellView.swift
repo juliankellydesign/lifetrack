@@ -46,7 +46,11 @@ class PlayerCellView: UIView {
       guard isBeingEdited != oldValue else { return }
       dotNumberView.isHidden = isBeingEdited
       deltaView.isHidden = isBeingEdited
-      poisonCounterView.isHidden = isBeingEdited || !showsPoisonBadge
+      if isBeingEdited {
+        setPoisonBadgeVisible(false, animated: true)
+      } else if poisonCounterView.isHidden {
+        setPoisonBadgeVisible(true, animated: true)
+      }
       if isBeingEdited { cancelDeltaSession() }
       setAdjustmentIconsVisible(!isBeingEdited, animated: true)
     }
@@ -267,8 +271,10 @@ class PlayerCellView: UIView {
   func setPoisonCounters(_ value: Int, animated: Bool) {
     poisonCounters = max(0, value)
     poisonCounterView.prepare(value: poisonCounters, isInteractive: false)
-    poisonCounterView.isHidden = !showsPoisonBadge || isBeingEdited
-    poisonCounterView.alpha = firstPlayerChromeVisible ? 1 : 0
+    poisonCounterView.setVisible(
+      showsPoisonBadge && !isBeingEdited && firstPlayerChromeVisible,
+      animated: false
+    )
     setNeedsLayout()
     updateThresholdAppearance(animated: animated)
     updateCommanderAccessibility()
@@ -283,6 +289,10 @@ class PlayerCellView: UIView {
         self.layoutIfNeeded()
       }
     }
+  }
+
+  func revealPoisonBadgeAfterEditing() {
+    setPoisonBadgeVisible(true, animated: true)
   }
 
   func shakeFirstPlayerLanding() {
@@ -333,7 +343,10 @@ class PlayerCellView: UIView {
       cancelDeltaSession()
     }
     deltaView.alpha = 0
-    poisonCounterView.alpha = visible && showsPoisonBadge ? 1 : 0
+    poisonCounterView.setVisible(
+      visible && showsPoisonBadge && !isBeingEdited,
+      animated: animated
+    )
     setAdjustmentIconsVisible(visible, animated: animated)
   }
 
@@ -353,8 +366,10 @@ class PlayerCellView: UIView {
     self.rotation = rotation
     lifeTotal = value
     self.hasLethalCommanderDamage = hasLethalCommanderDamage
-    poisonCounterView.isHidden = !showsPoisonBadge || isBeingEdited
-    poisonCounterView.alpha = firstPlayerChromeVisible ? 1 : 0
+    poisonCounterView.setVisible(
+      showsPoisonBadge && !isBeingEdited && firstPlayerChromeVisible,
+      animated: false
+    )
     updateThresholdAppearance(animated: false)
     dotNumberView.isAccessibilityElement = true
     dotNumberView.accessibilityIdentifier = "life-total"
@@ -967,11 +982,24 @@ class PlayerCellView: UIView {
     if sessionDelta != 0 {
       deltaView.alpha = 1 - progress(for: deltaView)
     }
+    poisonCounterView.setVisibilityProgress(
+      1 - progress(for: poisonCounterView)
+    )
   }
 
   func resetSweep(animated: Bool) {
     dotNumberView.resetSweep(animated: animated)
     setAdjustmentIconsVisible(true, animated: animated)
+    poisonCounterView.setVisibilityProgress(
+      firstPlayerChromeVisible && showsPoisonBadge ? 1 : 0
+    )
+  }
+
+  private func setPoisonBadgeVisible(_ visible: Bool, animated: Bool) {
+    poisonCounterView.setVisible(
+      visible && showsPoisonBadge && firstPlayerChromeVisible,
+      animated: animated
+    )
   }
 
   private func setAdjustmentIconsVisible(_ visible: Bool, animated: Bool) {

@@ -104,8 +104,15 @@ and `PlayerSeat.rotationDegrees` instead of comparing raw screen coordinates.
   purple.
 - Exact life input also includes a poison-counter control below the life total,
   aligned with the keypad's bottom row in side-player layouts. At zero it shows
-  the 20pt poison icon and the standard dimmed plus icon; after the first
+  the poison icon and the standard dimmed plus icon; after the first
   increment it also reveals a dimmed minus icon and a Karl rolling count.
+  In the editor, the poison icon is 32pt to match the keypad action icons and
+  its rolling count uses the 32pt keypad numeral style. When a nonzero poison
+  count enters or leaves the editor, the compact on-board badge and editor
+  control each use the shared 0.16-second fade-and-scale profile between 50%
+  and 100% at their stationary positions; poison does not travel between them.
+  Cancel first restores the saved poison count so the returning badge always
+  matches the unchanged game state.
   Saving commits poison with the other edit-session changes, while canceling
   discards it. Players with one or more poison counters show the same compact
   poison icon and count below their normal on-board life total.
@@ -223,7 +230,9 @@ Input and selector:
   dismissal reverses the same per-dot motion back to the board.
 - `lifetrack/Views/PoisonCounterView.swift` - reusable poison icon/count badge
   and the edit-mode decrement/increment control; its count uses the shared
-  SwiftUI rolling-number transition and `Typography.lifeDelta` token.
+  SwiftUI rolling-number transition, with `Typography.keypadDigit` in the
+  editor and `Typography.lifeDelta` on the board. It also owns the stationary
+  fade-and-scale visibility profile shared by editor transitions and reset.
 - `lifetrack/Views/SeatColorPickerView.swift` - the six accessible dot-shaped
   chips used to choose an exclusive colorless seat or any mana-color mix.
 - `lifetrack/Views/NumberPadView.swift` - 3 by 4 number pad (`1...9`, cancel
@@ -245,7 +254,8 @@ Dot and typography systems:
   text used by the transient life-delta readout.
 - `lifetrack/Views/Karl.swift` - bundled Karl font factories.
 - `lifetrack/Views/Typography.swift` - central Karl text tokens for the keypad
-  and transient life delta readout.
+  and rolling numeric readouts. Every typography token applies tabular figures
+  in both its UIKit and SwiftUI forms; do not add a proportional-numeral opt-out.
 
 Assets/resources:
 
@@ -268,8 +278,8 @@ Assets/resources:
 - `lifetrack/Assets.xcassets/IconPlus.imageset` and
   `lifetrack/Assets.xcassets/IconMinus.imageset` - shared app-wide +/- glyphs.
 - `lifetrack/Assets.xcassets/icon-*.imageset` - remaining action icons.
-  `icon-poison` is the 20pt poison-counter badge used in edit mode and on the
-  board.
+  `icon-poison` renders at 32pt in the editor and 20pt in the compact on-board
+  badge.
 - `lifetrack/Resources/Fonts` - Karl font files.
 
 ## Layout System
@@ -400,8 +410,8 @@ Important touch behavior:
 - `.decreasing` rolls top-to-bottom; `.increasing` rolls bottom-to-top.
 - Animated changes use `.beginFromCurrentState`, so rapid taps retarget the
   current animation instead of queueing delayed rolls.
-- Reset swipe fades dots and adjustment controls by position against a moving
-  edge.
+- Reset swipe fades and scales dots, adjustment controls, and poison badges by
+  position against a moving edge.
 - After layout selection, an imaginary clockwise beam rotates from the board
   center and strobes active dots individually. The beam uses a smooth quintic
   falloff with a 0.32-radian base half-width on both sides and scales dots from
@@ -463,7 +473,8 @@ Important touch behavior:
 - `BoardInsets` is the global source for board/selector/overlay insets. Do not
   rederive those constants locally.
 - `Typography` is the source for Karl text styles. Do not add ad-hoc font sizes
-  in views.
+  in views. All app numerals use tabular figures: Karl-based numbers inherit
+  them from `Typography.Style`, while dot-matrix totals are fixed-cell by design.
 
 ## Verification Expectations
 
