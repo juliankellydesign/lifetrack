@@ -20,7 +20,7 @@ class GameBoardView: UIView {
   /// Target dot diameter for the on-board life totals. Cells render at this
   /// size unless a cell is too small to fit it, in which case every cell
   /// shrinks together (see `layoutSubviews`).
-  private static let targetDotSize: CGFloat = 18
+  private static let targetDotSize: CGFloat = 24
 
   /// Width over which the leading edge of the swipe blends from "natural" to "wiped".
   private static let sweepFeather: CGFloat = 60

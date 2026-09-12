@@ -21,7 +21,7 @@ requires full screen, and disables idle sleep during play.
 
 Bundle ID: `jfk.lifetrack`.
 Home Screen display name: `Scoreboard`.
-Deployment target: iOS/iPadOS 26.1.
+Deployment target: iOS/iPadOS 17.0.
 Supported platforms: iOS and iPadOS only.
 Framework style: UIKit app, with SwiftUI hosted only where useful for rolling
 numeric text.
@@ -533,6 +533,12 @@ touches layout, gestures, reset flow, grid skeleton, or overlay presentation,
 also run the app in Simulator and inspect the affected orientations/layouts.
 
 No automated tests exist yet, so simulator verification is the current standard.
+
+The deployment target is iOS 17.0, so any new API must be available there or
+guarded with `#available`. When a change adopts a newer API, also build and
+run on an iOS 17 simulator (an iPad Pro 11-inch iOS 17.0 runtime is installed).
+Build it with the normal command and an explicit `-destination` id from
+`xcrun simctl list devices`.
 
 ## gstack
 
