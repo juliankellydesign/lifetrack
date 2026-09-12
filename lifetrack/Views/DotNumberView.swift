@@ -187,6 +187,21 @@ class DotNumberView: UIView {
           scaleX: initialScale,
           y: initialScale
         )
+        let travel = CGPoint(
+          x: destinationCenter.x - oldLayer.position.x,
+          y: destinationCenter.y - oldLayer.position.y
+        )
+        let travelDistance = hypot(travel.x, travel.y)
+        if travelDistance > 0.001 {
+          newView.animateSpatialResponse(
+            direction: CGPoint(
+              x: travel.x / travelDistance,
+              y: travel.y / travelDistance
+            ),
+            distance: travelDistance,
+            duration: 0.34
+          )
+        }
         oldView.removeFromSuperview()
         newView.animateKeypadDissolveIn()
         UIView.animate(

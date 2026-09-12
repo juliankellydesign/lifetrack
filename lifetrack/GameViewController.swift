@@ -1,6 +1,13 @@
 import UIKit
 
 class GameViewController: UIViewController {
+  /// Shows the in-app layout and dot-font tools during development only.
+  #if DEBUG
+  private static let showsDebugControls = true
+  #else
+  private static let showsDebugControls = false
+  #endif
+
   private var currentLayout: PlayerLayout = .fourA
   private var players: [Player] = []
   private var editingIndex: Int?
@@ -40,7 +47,7 @@ class GameViewController: UIViewController {
     setupOverlay()
     setupLayoutSelector()
     setupScreenSkeleton()
-    resetPlayers(layout: currentLayout)
+    showLayoutSelector(animated: false, playsSound: false)
   }
 
   // MARK: - Setup
@@ -117,14 +124,13 @@ class GameViewController: UIViewController {
 
   private func handleSwipeReset() {
     UIImpactFeedbackGenerator(style: .medium).impactOccurred(intensity: 0.9)
-    // Clear the board to empty and reveal the layout selector. The next
-    // game starts when the user taps a layout in the selector.
-    players = []
-    gameBoardView.configure(layout: currentLayout, players: [])
-    showLayoutSelector(animated: true)
+    // Preserve the current game behind the selector so the committed wipe can
+    // still be cancelled before a new layout starts a replacement game.
+    showLayoutSelector(animated: true, allowsCancellation: true)
   }
 
   private func setupToolbar() {
+    toolbarView.isHidden = !Self.showsDebugControls
     gridButton.isAccessibilityElement = true
     gridButton.accessibilityLabel = "Layout grid and tap targets"
     updateGridButtonAppearance()
@@ -163,6 +169,9 @@ class GameViewController: UIViewController {
     layoutSelectorView.alpha = 0
     layoutSelectorView.onSelect = { [weak self] layout in
       self?.startGame(with: layout)
+    }
+    layoutSelectorView.onCancel = { [weak self] in
+      self?.cancelReset()
     }
     view.addSubview(layoutSelectorView)
   }
@@ -328,12 +337,25 @@ class GameViewController: UIViewController {
     }
   }
 
-  private func showLayoutSelector(animated: Bool) {
+  private func cancelReset() {
+    gameBoardView.cancelCommittedReset()
+    hideLayoutSelector(animated: true)
+  }
+
+  private func showLayoutSelector(
+    animated: Bool,
+    playsSound: Bool = true,
+    allowsCancellation: Bool = false
+  ) {
     preservesFontSelectionForNextGame = false
-    AppSoundPlayer.shared.play(.layoutSelection)
+    if playsSound {
+      AppSoundPlayer.shared.play(.layoutSelection)
+    }
     view.bringSubviewToFront(layoutSelectorView)
     bringDebugToolsToFront()
+    layoutSelectorView.allowsCancellation = allowsCancellation
     layoutSelectorView.isHidden = false
+    layoutSelectorView.startInstructions()
     if animated {
       UIView.animate(withDuration: 0.25) {
         self.layoutSelectorView.alpha = 1
@@ -345,6 +367,7 @@ class GameViewController: UIViewController {
 
   private func hideLayoutSelector(animated: Bool, completion: (() -> Void)? = nil) {
     bringDebugToolsToFront()
+    layoutSelectorView.stopInstructions()
     let finish = {
       self.layoutSelectorView.isHidden = true
       completion?()
@@ -373,8 +396,6 @@ class GameViewController: UIViewController {
     )
     let cellDotSize = cellDotView.actualDotSize
 
-    gameBoardView.setEditing(index: index)
-
     let player = players[index]
     view.bringSubviewToFront(overlayView)
     bringDebugToolsToFront()
@@ -397,14 +418,16 @@ class GameViewController: UIViewController {
       pitch: AppSoundPlayer.modeEntryPitchShift
     )
     overlayView.animateDotNumberViewHeroToFinal()
-    overlayView.setPoisonCounterVisible(true, animated: true)
-
-    UIView.animate(
-      withDuration: 0.45, delay: 0,
-      usingSpringWithDamping: 0.85, initialSpringVelocity: 0,
-      options: .curveEaseOut
-    ) {
-      self.overlayView.presentChrome()
+    gameBoardView.setEditing(index: index) { [weak self] in
+      guard let self else { return }
+      self.overlayView.setPoisonCounterVisible(true, animated: true)
+      UIView.animate(
+        withDuration: LifeInputOverlay.chromeAnimationDuration, delay: 0,
+        usingSpringWithDamping: 0.85, initialSpringVelocity: 0,
+        options: .curveEaseOut
+      ) {
+        self.overlayView.presentChrome()
+      }
     }
   }
 

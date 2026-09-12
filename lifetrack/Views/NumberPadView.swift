@@ -14,6 +14,7 @@ class NumberPadView: UIView {
   var keyFrames: [CGRect] { buttons.map { $0.frame } }
 
   private var buttons: [UIButton] = []
+  private var buttonKeys: [NumberPadKey] = []
   private let keys: [[NumberPadKey]] = [
     [.digit(1), .digit(2), .digit(3)],
     [.digit(4), .digit(5), .digit(6)],
@@ -111,11 +112,41 @@ class NumberPadView: UIView {
 
         addSubview(button)
         buttons.append(button)
+        buttonKeys.append(key)
       }
     }
   }
 
-  private static func digitTitle(_ string: String) -> NSAttributedString {
+  func setSeatColors(_ colors: Set<SeatColor>, seed: Int, animated: Bool) {
+    let palette = PlayerColorPalette(colors: colors, seed: seed)
+    let changes = {
+      for (index, button) in self.buttons.enumerated() {
+        let color = palette.color(at: 100 + index)
+        button.tintColor = color
+        if case .digit(let digit) = self.buttonKeys[index] {
+          button.setAttributedTitle(
+            Self.digitTitle("\(digit)", color: color),
+            for: .normal
+          )
+        }
+      }
+    }
+    if animated {
+      UIView.transition(
+        with: self,
+        duration: 0.28,
+        options: [.transitionCrossDissolve, .allowUserInteraction],
+        animations: changes
+      )
+    } else {
+      changes()
+    }
+  }
+
+  private static func digitTitle(
+    _ string: String,
+    color: UIColor = .white
+  ) -> NSAttributedString {
     let digit = Typography.keypadDigit
     let style = NSMutableParagraphStyle()
     style.minimumLineHeight = digit.lineHeight
@@ -125,7 +156,7 @@ class NumberPadView: UIView {
       string: string,
       attributes: [
         .font: digit.uiFont,
-        .foregroundColor: UIColor.white,
+        .foregroundColor: color,
         .paragraphStyle: style,
       ]
     )

@@ -14,6 +14,7 @@ enum LifeInputDismissal {
 
 class LifeInputOverlay: UIView {
   static let dotHeroAnimationDuration = DotNumberView.editHeroTotalDuration
+  static let chromeAnimationDuration: TimeInterval = 0.34
 
   var onDismiss: ((LifeInputDismissal) -> Void)?
 
@@ -82,6 +83,7 @@ class LifeInputOverlay: UIView {
       guard let self else { return }
       self.seatColors = colors
       self.dotNumberView.setSeatColors(colors, seed: self.colorSeed, animated: true)
+      self.updatePlayerChromeColors(animated: true)
     }
     contentContainer.addSubview(colorPickerView)
     poisonCounterView.onValueChanged = { [weak self] value in
@@ -129,6 +131,7 @@ class LifeInputOverlay: UIView {
     colorPickerView.alpha = 0
     colorPickerView.prepare(colors: self.seatColors)
     poisonCounterView.prepare(value: self.poisonCounters, isInteractive: true)
+    updatePlayerChromeColors(animated: false)
     poisonCounterView.setVisible(false, animated: false)
     dotNumberView.setSeatColors(self.seatColors, seed: colorSeed, animated: false)
 
@@ -217,6 +220,7 @@ class LifeInputOverlay: UIView {
     inputText = ""
     seatColors = initialSeatColors
     poisonCounters = initialPoisonCounters
+    updatePlayerChromeColors(animated: true)
     poisonCounterView.prepare(
       value: poisonCounters,
       isInteractive: true
@@ -231,6 +235,15 @@ class LifeInputOverlay: UIView {
       dotNumberView.setSeatColors(seatColors, seed: colorSeed, animated: false)
       dotNumberView.updateNumber(lifeTotal, direction: nil, animated: false)
     }
+  }
+
+  private func updatePlayerChromeColors(animated: Bool) {
+    numberPadView.setSeatColors(seatColors, seed: colorSeed, animated: animated)
+    poisonCounterView.setSeatColors(
+      seatColors,
+      seed: colorSeed,
+      animated: animated
+    )
   }
 
   override func safeAreaInsetsDidChange() {

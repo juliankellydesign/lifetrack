@@ -2,6 +2,9 @@ import UIKit
 
 class DotDigitView: UIView {
   private var dotViews: [UIView] = []
+  /// Painted dot surfaces live inside the positioned/scaled dot views so
+  /// velocity deformation can compose with every existing motion system.
+  private var dotFaces: [UIView] = []
   private var font = DotFontSettings.current
   /// One stable random phase per dot. It is regenerated only when the digit
   /// grid is rebuilt, avoiding frame-to-frame flicker and runtime noise work.
@@ -11,18 +14,24 @@ class DotDigitView: UIView {
   private var colorSeed = 0
 
   static let animationDuration: TimeInterval = 0.3
-  static let rippleWaveDuration: TimeInterval = 0.32
+  static let rippleWaveDuration: TimeInterval = 0.24
+  static let rippleAnimationDuration: TimeInterval = 0.32
+  private static let rippleSpringDamping: CGFloat = 0.62
   /// Stable jitter is always 15% of the effect's own phase or delay span, so
   /// noise has consistent visual weight across different animation systems.
   private static let animationNoiseFraction: CGFloat = 0.15
-  private static let editHeroDuration: TimeInterval = 0.48
-  private static let editHeroMaximumDelay: TimeInterval = 0.16
+  private static let editHeroDuration: TimeInterval = 0.36
+  private static let editHeroMaximumDelay: TimeInterval = 0.12
   static let editHeroTotalDuration =
     editHeroDuration + editHeroMaximumDelay
   private static let keypadDissolveDuration: TimeInterval = 0.22
   private static let keypadDissolveMaximumDelay: TimeInterval = 0.07
   private static let keypadDissolveOutDuration: TimeInterval = 0.3
   static let hiddenScale: CGFloat = 0.01
+  private static let maximumMotionStretch: CGFloat = 0.16
+  private static let maximumMotionSquash: CGFloat = 0.05
+  /// Dot-widths per second at which the response is about 63% engaged.
+  private static let motionVelocityResponse: CGFloat = 7
 
   /// Dot corner radius as a fraction of dot size, so roundness stays constant
   /// as dots scale (board at 18pt vs. the larger life-input overlay dots).
@@ -37,6 +46,7 @@ class DotDigitView: UIView {
     self.font = font
     dotViews.forEach { $0.removeFromSuperview() }
     dotViews.removeAll()
+    dotFaces.removeAll()
     dotTimingNoise.removeAll()
     currentDigit = nil
 
@@ -51,12 +61,18 @@ class DotDigitView: UIView {
         width: dotSize,
         height: dotSize
       ))
-      dot.backgroundColor = .white
-      dot.layer.cornerRadius = Self.cornerRadius(forDotSize: dotSize)
-      dot.layer.cornerCurve = .continuous
+      dot.backgroundColor = .clear
+      let face = UIView(frame: dot.bounds)
+      face.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      face.backgroundColor = .white
+      face.layer.cornerRadius = Self.cornerRadius(forDotSize: dotSize)
+      face.layer.cornerCurve = .continuous
+      face.isUserInteractionEnabled = false
+      dot.addSubview(face)
       setDotAppearance(dot, alpha: 0, scale: Self.hiddenScale)
       addSubview(dot)
       dotViews.append(dot)
+      dotFaces.append(face)
       dotTimingNoise.append(CGFloat.random(in: -1...1))
     }
 
@@ -70,32 +86,11 @@ class DotDigitView: UIView {
   func setSeatColors(_ colors: [SeatColor], seed: Int, animated: Bool) {
     seatColors = colors.isEmpty ? [.colorless] : colors
     colorSeed = seed
-    let selectedColorSet = Set(seatColors)
+    let palette = PlayerColorPalette(colors: seatColors, seed: colorSeed)
 
-    for (index, dot) in dotViews.enumerated() {
+    for (index, face) in dotFaces.enumerated() {
       let mixedSeed = stableColorSeed(for: index)
-      let unsignedSeed = UInt(bitPattern: mixedSeed)
-      let paletteIndex = Int(
-        unsignedSeed % UInt(seatColors.count)
-      )
-      let targetColor: UIColor
-      if seatColors.count > 1 {
-        let secondaryOffset = 1 + Int(
-          (unsignedSeed >> 8) % UInt(seatColors.count - 1)
-        )
-        let secondaryIndex = (paletteIndex + secondaryOffset) % seatColors.count
-        let blendUnit = CGFloat((unsignedSeed >> 16) & 0xFFFF)
-          / CGFloat(0xFFFF)
-        let blendAmount = 0.10 + blendUnit * 0.35
-        targetColor = seatColors[paletteIndex].interpolatedColor(
-          toward: seatColors[secondaryIndex],
-          selectedColors: selectedColorSet,
-          seed: mixedSeed,
-          amount: blendAmount
-        )
-      } else {
-        targetColor = seatColors[paletteIndex].variedColor(seed: mixedSeed)
-      }
+      let targetColor = palette.color(at: index)
       if animated {
         let delay = TimeInterval(abs(mixedSeed % 7)) * 0.008
         UIView.animate(
@@ -103,10 +98,10 @@ class DotDigitView: UIView {
           delay: delay,
           options: [.allowUserInteraction, .beginFromCurrentState, .curveEaseInOut]
         ) {
-          dot.backgroundColor = targetColor
+          face.backgroundColor = targetColor
         }
       } else {
-        dot.backgroundColor = targetColor
+        face.backgroundColor = targetColor
       }
     }
   }
@@ -129,6 +124,137 @@ class DotDigitView: UIView {
     dot.transform = CGAffineTransform(scaleX: scale, y: scale)
   }
 
+  /// Maps instantaneous speed through a saturating smoothstep curve. Slow
+  /// movement only hints at its heading; fast movement approaches the full
+  /// travel angle and the maximum directional stretch.
+  private func motionTransform(
+    velocity: CGPoint,
+    dotSize: CGFloat
+  ) -> CATransform3D {
+    let speed = hypot(velocity.x, velocity.y)
+    guard speed > 0.001, dotSize > 0.001 else {
+      return CATransform3DIdentity
+    }
+
+    let speedInDotWidths = speed / dotSize
+    let response = 1 - CGFloat(
+      Foundation.exp(
+        -Double(speedInDotWidths / Self.motionVelocityResponse)
+      )
+    )
+    let curvedResponse = response * response * (3 - 2 * response)
+    let directionAngle = atan2(velocity.y, velocity.x)
+    let rotation = directionAngle * curvedResponse
+    let stretch = 1 + Self.maximumMotionStretch * curvedResponse
+    let squash = 1 - Self.maximumMotionSquash * curvedResponse
+    let transform = CGAffineTransform(rotationAngle: rotation)
+      .scaledBy(x: stretch, y: squash)
+    return CATransform3DMakeAffineTransform(transform)
+  }
+
+  private func addVelocityDeformation(
+    toDotAt index: Int,
+    offsets: [CGPoint],
+    keyTimes: [NSNumber],
+    duration: TimeInterval,
+    beginTime: CFTimeInterval,
+    timingFunctions: [CAMediaTimingFunction]
+  ) {
+    guard !UIAccessibility.isReduceMotionEnabled,
+        dotFaces.indices.contains(index),
+        offsets.count == keyTimes.count,
+        offsets.count >= 3 else { return }
+
+    let dotSize = dotViews[index].bounds.width
+    let transforms = offsets.indices.map { pointIndex -> NSValue in
+      guard pointIndex > 0, pointIndex < offsets.count - 1 else {
+        return NSValue(caTransform3D: CATransform3DIdentity)
+      }
+      let previousTime = CGFloat(truncating: keyTimes[pointIndex - 1])
+      let nextTime = CGFloat(truncating: keyTimes[pointIndex + 1])
+      let timeSpan = max(
+        0.001,
+        (nextTime - previousTime) * CGFloat(duration)
+      )
+      let velocity = CGPoint(
+        x: (offsets[pointIndex + 1].x - offsets[pointIndex - 1].x)
+          / timeSpan,
+        y: (offsets[pointIndex + 1].y - offsets[pointIndex - 1].y)
+          / timeSpan
+      )
+      return NSValue(caTransform3D: motionTransform(
+        velocity: velocity,
+        dotSize: dotSize
+      ))
+    }
+
+    let animation = CAKeyframeAnimation(keyPath: "transform")
+    animation.values = transforms
+    animation.keyTimes = keyTimes
+    animation.duration = duration
+    animation.beginTime = beginTime
+    animation.timingFunctions = timingFunctions
+    animation.isRemovedOnCompletion = true
+    dotFaces[index].layer.add(animation, forKey: nil)
+  }
+
+  private func resetVelocityDeformation(at index: Int) {
+    guard dotFaces.indices.contains(index) else { return }
+    dotFaces[index].layer.removeAllAnimations()
+    dotFaces[index].layer.transform = CATransform3DIdentity
+  }
+
+  private func addSpringTravelDeformation(
+    toDotAt index: Int,
+    direction: CGPoint,
+    distance: CGFloat,
+    duration: TimeInterval,
+    delay: TimeInterval
+  ) {
+    guard distance > 0.001 else { return }
+    let progress: [CGFloat] = [0, 0.12, 0.56, 0.91, 1.035, 1]
+    let offsets = progress.map {
+      CGPoint(
+        x: direction.x * distance * $0,
+        y: direction.y * distance * $0
+      )
+    }
+    let keyTimes = [0, 0.12, 0.34, 0.58, 0.79, 1]
+      .map(NSNumber.init(value:))
+    addVelocityDeformation(
+      toDotAt: index,
+      offsets: offsets,
+      keyTimes: keyTimes,
+      duration: duration,
+      beginTime: CACurrentMediaTime() + delay,
+      timingFunctions: Array(
+        repeating: CAMediaTimingFunction(name: .easeInEaseOut),
+        count: offsets.count - 1
+      )
+    )
+  }
+
+  /// Adds directional response when the digit container itself moves, such as
+  /// retained digits sliding into their newly fitted keypad positions.
+  func animateSpatialResponse(
+    direction: CGPoint,
+    distance: CGFloat,
+    duration: TimeInterval
+  ) {
+    guard let digit = currentDigit else { return }
+    let pattern = font.pattern(for: digit)
+    guard pattern.count == dotViews.count else { return }
+    for index in dotViews.indices where pattern[index] {
+      addSpringTravelDeformation(
+        toDotAt: index,
+        direction: direction,
+        distance: distance,
+        duration: duration,
+        delay: 0
+      )
+    }
+  }
+
   /// Animated changes — including rapid taps — play the staggered spring roll.
   /// The springs use `.beginFromCurrentState`, so a tap landing mid-roll just
   /// retargets the dots toward the latest digit from wherever they are, keeping
@@ -146,6 +272,7 @@ class DotDigitView: UIView {
     if !animated {
       for (i, dot) in dotViews.enumerated() {
         dot.layer.removeAllAnimations()
+        resetVelocityDeformation(at: i)
         let active = pattern[i]
         setDotAppearance(
           dot,
@@ -188,6 +315,7 @@ class DotDigitView: UIView {
         .map { CGFloat(truncating: $0) }
         ?? 1
       dotViews[index].layer.removeAllAnimations()
+      resetVelocityDeformation(at: index)
       dotViews[index].alpha = alpha
       dotViews[index].transform = CGAffineTransform(scaleX: scale, y: scale)
     }
@@ -201,6 +329,7 @@ class DotDigitView: UIView {
     guard pattern.count == dotViews.count else { return }
     for index in dotViews.indices where pattern[index] {
       dotViews[index].layer.removeAllAnimations()
+      resetVelocityDeformation(at: index)
       setDotAppearance(
         dotViews[index],
         alpha: 0,
@@ -308,6 +437,7 @@ class DotDigitView: UIView {
 
     for (index, dot) in dotViews.enumerated() {
       dot.layer.removeAllAnimations()
+      resetVelocityDeformation(at: index)
       guard pattern[index] else {
         setDotAppearance(dot, alpha: 0, scale: Self.hiddenScale)
         continue
@@ -355,6 +485,26 @@ class DotDigitView: UIView {
         projectionSpan: projectionSpan,
         maximumProjection: maximumProjection,
         timingNoise: dotTimingNoise[index]
+      )
+      let currentTransform = dot.layer.presentation()?.affineTransform()
+        ?? dot.transform
+      let travel = CGPoint(
+        x: -currentTransform.tx,
+        y: -currentTransform.ty
+      )
+      let travelDistance = hypot(travel.x, travel.y)
+      let travelDirection = travelDistance > 0.001
+        ? CGPoint(
+          x: travel.x / travelDistance,
+          y: travel.y / travelDistance
+        )
+        : direction
+      addSpringTravelDeformation(
+        toDotAt: index,
+        direction: travelDirection,
+        distance: travelDistance,
+        duration: Self.editHeroDuration,
+        delay: delay
       )
 
       UIView.animate(
@@ -410,6 +560,26 @@ class DotDigitView: UIView {
         tx: sourcePosition.x - editorPosition.x,
         ty: sourcePosition.y - editorPosition.y
       )
+      let currentTransform = dot.layer.presentation()?.affineTransform()
+        ?? dot.transform
+      let travel = CGPoint(
+        x: targetTransform.tx - currentTransform.tx,
+        y: targetTransform.ty - currentTransform.ty
+      )
+      let travelDistance = hypot(travel.x, travel.y)
+      let travelDirection = travelDistance > 0.001
+        ? CGPoint(
+          x: travel.x / travelDistance,
+          y: travel.y / travelDistance
+        )
+        : direction
+      addSpringTravelDeformation(
+        toDotAt: index,
+        direction: travelDirection,
+        distance: travelDistance,
+        duration: Self.editHeroDuration,
+        delay: delay
+      )
 
       UIView.animate(
         withDuration: Self.editHeroDuration,
@@ -443,6 +613,10 @@ class DotDigitView: UIView {
 
   func finishEditHero() {
     dotViews.forEach { $0.layer.removeAllAnimations() }
+    dotFaces.forEach {
+      $0.layer.removeAllAnimations()
+      $0.layer.transform = CATransform3DIdentity
+    }
     resetSweep(animated: false)
   }
 
@@ -465,45 +639,60 @@ class DotDigitView: UIView {
     func makeShakeAnimation(
       amplitude: CGFloat,
       maximumDelay: TimeInterval
-    ) -> CAKeyframeAnimation {
+    ) -> (
+      animation: CAKeyframeAnimation,
+      offsets: [CGPoint],
+      timingFunctions: [CAMediaTimingFunction]
+    ) {
       let baseAngle = CGFloat.random(in: 0..<(CGFloat.pi * 2))
       let offsets = envelopes.enumerated().map { step, envelope in
         let angleJitter = CGFloat(step) * CGFloat.random(in: -0.16...0.16)
         let angle = baseAngle + angleJitter
         let distance = amplitude * envelope
-        return NSValue(cgPoint: CGPoint(
+        return CGPoint(
           x: cos(angle) * distance,
           y: sin(angle) * distance
-        ))
+        )
       }
 
       let animation = CAKeyframeAnimation(keyPath: "position")
-      animation.values = offsets
+      animation.values = offsets.map(NSValue.init(cgPoint:))
       animation.keyTimes = keyTimes
       animation.duration = 0.36 + TimeInterval(intensity) * 0.14
       animation.beginTime =
         CACurrentMediaTime() + TimeInterval.random(in: 0...maximumDelay)
-      animation.timingFunctions = Array(
+      let timingFunctions = Array(
         repeating: CAMediaTimingFunction(name: .easeInEaseOut),
         count: offsets.count - 1
       )
+      animation.timingFunctions = timingFunctions
       animation.isAdditive = true
       animation.isRemovedOnCompletion = true
-      return animation
+      return (animation, offsets, timingFunctions)
     }
 
     // A quieter coherent motion underneath the independent dots gives each
     // digit a little shared weight without turning the number into a rigid
     // block. This animation also uses a nil key, so repeated taps stack.
-    layer.add(
-      makeShakeAnimation(amplitude: amplitude * 0.5, maximumDelay: 0.008),
-      forKey: nil
+    let coherentMotion = makeShakeAnimation(
+      amplitude: amplitude * 0.5,
+      maximumDelay: 0.008
     )
+    layer.add(coherentMotion.animation, forKey: nil)
 
     for (index, dot) in dotViews.enumerated() where pattern[index] {
-      dot.layer.add(
-        makeShakeAnimation(amplitude: amplitude, maximumDelay: 0.018),
-        forKey: nil
+      let motion = makeShakeAnimation(
+        amplitude: amplitude,
+        maximumDelay: 0.018
+      )
+      dot.layer.add(motion.animation, forKey: nil)
+      addVelocityDeformation(
+        toDotAt: index,
+        offsets: motion.offsets,
+        keyTimes: keyTimes,
+        duration: motion.animation.duration,
+        beginTime: motion.animation.beginTime,
+        timingFunctions: motion.timingFunctions
       )
     }
   }
@@ -554,15 +743,21 @@ class DotDigitView: UIView {
       )
       let jitteredAmplitude = displacementAmplitude
         * (1 + dotTimingNoise[index] * Self.animationNoiseFraction)
-      dot.layer.add(
-        directionalPositionAnimation(
-          direction: direction,
-          amplitude: jitteredAmplitude,
-          duration: 0.34 + TimeInterval(intensity) * 0.12,
-          delay: delay,
-          organicPhase: dotTimingNoise[index]
-        ),
-        forKey: nil
+      let motion = directionalPositionAnimation(
+        direction: direction,
+        amplitude: jitteredAmplitude,
+        duration: 0.34 + TimeInterval(intensity) * 0.12,
+        delay: delay,
+        organicPhase: dotTimingNoise[index]
+      )
+      dot.layer.add(motion.animation, forKey: nil)
+      addVelocityDeformation(
+        toDotAt: index,
+        offsets: motion.offsets,
+        keyTimes: motion.keyTimes,
+        duration: motion.animation.duration,
+        beginTime: motion.animation.beginTime,
+        timingFunctions: motion.timingFunctions
       )
     }
   }
@@ -705,6 +900,7 @@ class DotDigitView: UIView {
         }
       } else {
         dot.layer.removeAllAnimations()
+        resetVelocityDeformation(at: i)
         changes()
       }
     }
@@ -713,8 +909,9 @@ class DotDigitView: UIView {
   /// Snap every dot to the hidden state. Pair with
   /// `resetSweep(animated: true)` to play a digit roll-in from blank.
   func snapToOff() {
-    for dot in dotViews {
+    for (index, dot) in dotViews.enumerated() {
       dot.layer.removeAllAnimations()
+      resetVelocityDeformation(at: index)
       setDotAppearance(dot, alpha: 0, scale: Self.hiddenScale)
     }
   }
@@ -741,6 +938,7 @@ class DotDigitView: UIView {
       )
       addRippleDisplacement(
         to: dot,
+        dotIndex: i,
         in: reference,
         origin: origin,
         delay: delay,
@@ -748,9 +946,9 @@ class DotDigitView: UIView {
         timingNoise: dotTimingNoise[i]
       )
       UIView.animate(
-        withDuration: Self.animationDuration,
+        withDuration: Self.rippleAnimationDuration,
         delay: delay,
-        usingSpringWithDamping: 0.7,
+        usingSpringWithDamping: Self.rippleSpringDamping,
         initialSpringVelocity: 0,
         options: .beginFromCurrentState
       ) {
@@ -781,6 +979,7 @@ class DotDigitView: UIView {
       )
       addRippleDisplacement(
         to: dot,
+        dotIndex: i,
         in: reference,
         origin: origin,
         delay: delay,
@@ -788,9 +987,9 @@ class DotDigitView: UIView {
         timingNoise: dotTimingNoise[i]
       )
       UIView.animate(
-        withDuration: Self.animationDuration,
+        withDuration: Self.rippleAnimationDuration,
         delay: delay,
-        usingSpringWithDamping: 0.7,
+        usingSpringWithDamping: Self.rippleSpringDamping,
         initialSpringVelocity: 0,
         options: .beginFromCurrentState
       ) {
@@ -829,6 +1028,7 @@ class DotDigitView: UIView {
 
   private func addRippleDisplacement(
     to dot: UIView,
+    dotIndex: Int,
     in reference: UIView,
     origin: CGPoint,
     delay: TimeInterval,
@@ -845,15 +1045,21 @@ class DotDigitView: UIView {
     let direction = reversed
       ? CGPoint(x: -outwardDirection.x, y: -outwardDirection.y)
       : outwardDirection
-    dot.layer.add(
-      directionalPositionAnimation(
-        direction: direction,
-        amplitude: dot.bounds.width * 0.65,
-        duration: Self.animationDuration + 0.12,
-        delay: delay,
-        organicPhase: timingNoise
-      ),
-      forKey: nil
+    let motion = directionalPositionAnimation(
+      direction: direction,
+      amplitude: dot.bounds.width * 0.65,
+      duration: Self.rippleAnimationDuration,
+      delay: delay,
+      organicPhase: timingNoise
+    )
+    dot.layer.add(motion.animation, forKey: nil)
+    addVelocityDeformation(
+      toDotAt: dotIndex,
+      offsets: motion.offsets,
+      keyTimes: motion.keyTimes,
+      duration: motion.animation.duration,
+      beginTime: motion.animation.beginTime,
+      timingFunctions: motion.timingFunctions
     )
   }
 
@@ -878,12 +1084,17 @@ class DotDigitView: UIView {
     duration: TimeInterval,
     delay: TimeInterval,
     organicPhase: CGFloat
-  ) -> CAKeyframeAnimation {
+  ) -> (
+    animation: CAKeyframeAnimation,
+    offsets: [CGPoint],
+    keyTimes: [NSNumber],
+    timingFunctions: [CAMediaTimingFunction]
+  ) {
     let perpendicular = CGPoint(x: -direction.y, y: direction.x)
     let sideMotion = organicPhase * amplitude * 0.12
     let envelopes: [CGFloat] = [0, 0.2, 1, 0.42, -0.12, 0]
     let sideEnvelopes: [CGFloat] = [0, 0.35, 1, -0.45, 0.2, 0]
-    var offsets: [NSValue] = []
+    var offsets: [CGPoint] = []
     for index in envelopes.indices {
       let radialDistance = amplitude * envelopes[index]
       let sideDistance = sideMotion * sideEnvelopes[index]
@@ -891,22 +1102,24 @@ class DotDigitView: UIView {
         + perpendicular.x * sideDistance
       let y = direction.y * radialDistance
         + perpendicular.y * sideDistance
-      offsets.append(NSValue(cgPoint: CGPoint(x: x, y: y)))
+      offsets.append(CGPoint(x: x, y: y))
     }
 
     let animation = CAKeyframeAnimation(keyPath: "position")
-    animation.values = offsets
-    animation.keyTimes = [0, 0.1, 0.28, 0.52, 0.76, 1]
+    animation.values = offsets.map(NSValue.init(cgPoint:))
+    let keyTimes = [0, 0.1, 0.28, 0.52, 0.76, 1]
       .map(NSNumber.init(value:))
+    animation.keyTimes = keyTimes
     animation.duration = duration
     animation.beginTime = CACurrentMediaTime() + delay
-    animation.timingFunctions = Array(
+    let timingFunctions = Array(
       repeating: CAMediaTimingFunction(name: .easeInEaseOut),
       count: offsets.count - 1
     )
+    animation.timingFunctions = timingFunctions
     animation.isAdditive = true
     animation.isRemovedOnCompletion = true
-    return animation
+    return (animation, offsets, keyTimes, timingFunctions)
   }
 
   /// Restore dots to their natural state for the current digit. Forces every

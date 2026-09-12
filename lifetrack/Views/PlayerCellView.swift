@@ -18,6 +18,9 @@ class PlayerCellView: UIView {
   private static let adjustIconAlpha: CGFloat = 0.3
   private static let adjustIconHiddenScale: CGFloat = 0.5
   private static let adjustIconVisibilityDuration: TimeInterval = 0.16
+  private static let commanderRecipientIconSize: CGFloat = 32
+  private static let commanderRecipientFadeDuration: TimeInterval = 0.16
+  private static let commanderRecipientLifeHoldDuration: TimeInterval = 0.5
 
   /// Transient net-change readout. Each tap (and ±10 hold tick) accumulates
   /// into `sessionDelta`; the magnitude is shown next to the active side's ±
@@ -30,6 +33,8 @@ class PlayerCellView: UIView {
 
   private(set) var lifeTotal: Int = Player.defaultLife
   private var poisonCounters = 0
+  private var seatColors: Set<SeatColor> = [.colorless]
+  private var colorSeed = 0
   var rotation: CGFloat = 0 {
     didSet { setNeedsLayout() }
   }
@@ -59,6 +64,7 @@ class PlayerCellView: UIView {
   private let contentContainer = UIView()
   private let numberPressContainer = UIView()
   let dotNumberView = DotNumberView()
+  private let commanderRecipientIcon = UIImageView()
   private let minusIcon = UIImageView()
   private let plusIcon = UIImageView()
   private let poisonCounterView = PoisonCounterView()
@@ -77,6 +83,8 @@ class PlayerCellView: UIView {
   private var hasLethalCommanderDamage = false
   private var repeatTimer: Timer?
   private var centerHoldTimer: Timer?
+  private var commanderRecipientHideWorkItem: DispatchWorkItem?
+  private var commanderRecipientRevealGeneration = 0
   private var isTouching = false
   private var activeTapZone: TapZone?
   private var didActivateCenterHold = false
@@ -120,6 +128,13 @@ class PlayerCellView: UIView {
     addSubview(contentContainer)
     contentContainer.addSubview(numberPressContainer)
     numberPressContainer.addSubview(dotNumberView)
+    commanderRecipientIcon.image = UIImage(named: "icon-delete")?.withRenderingMode(.alwaysTemplate)
+    commanderRecipientIcon.tintColor = .white
+    commanderRecipientIcon.alpha = 0
+    commanderRecipientIcon.contentMode = .scaleAspectFit
+    commanderRecipientIcon.isUserInteractionEnabled = false
+    commanderRecipientIcon.isAccessibilityElement = false
+    numberPressContainer.addSubview(commanderRecipientIcon)
     configureAdjustIcon(minusIcon, named: "IconMinus")
     configureAdjustIcon(plusIcon, named: "IconPlus")
     poisonCounterView.prepare(value: 0, isInteractive: false)
@@ -186,6 +201,13 @@ class PlayerCellView: UIView {
     // frame so they read correctly from each player's seat.
     let numRect = dotNumberView.numberContentRect
       .offsetBy(dx: dotNumberView.frame.minX, dy: dotNumberView.frame.minY)
+    commanderRecipientIcon.bounds = CGRect(
+      x: 0,
+      y: 0,
+      width: Self.commanderRecipientIconSize,
+      height: Self.commanderRecipientIconSize
+    )
+    commanderRecipientIcon.center = CGPoint(x: numRect.midX, y: numRect.midY)
     poisonCounterView.frame = CGRect(
       x: contentContainer.bounds.midX - numberWidth / 2,
       y: numRect.maxY,
@@ -249,6 +271,7 @@ class PlayerCellView: UIView {
     shakes: Bool = true,
     hasLethalCommanderDamage: Bool? = nil
   ) {
+    let isCommanderRecipient = displayMode == .commanderRecipient
     if let hasLethalCommanderDamage {
       self.hasLethalCommanderDamage = hasLethalCommanderDamage
     }
@@ -257,7 +280,16 @@ class PlayerCellView: UIView {
     changeDirection = direction
     dotNumberView.updateNumber(value, direction: direction, animated: animated)
     setNeedsLayout()
-    updateThresholdAppearance(animated: animated)
+    if isCommanderRecipient {
+      if animated {
+        revealCommanderRecipientLifeTotal()
+      } else {
+        dotNumberView.alpha = 0
+        commanderRecipientIcon.alpha = Self.adjustIconAlpha
+      }
+    } else {
+      updateThresholdAppearance(animated: animated)
+    }
     if animated, shakes, magnitude > 0 {
       dotNumberView.shakeForChange(magnitude: magnitude)
     }
@@ -265,12 +297,37 @@ class PlayerCellView: UIView {
   }
 
   func setSeatColors(_ colors: Set<SeatColor>, seed: Int, animated: Bool) {
-    dotNumberView.setSeatColors(colors, seed: seed, animated: animated)
+    seatColors = colors.isEmpty ? [.colorless] : colors
+    colorSeed = seed
+    dotNumberView.setSeatColors(seatColors, seed: seed, animated: animated)
+    poisonCounterView.setSeatColors(seatColors, seed: seed, animated: animated)
+    let palette = PlayerColorPalette(colors: seatColors, seed: seed)
+    let changes = {
+      self.minusIcon.tintColor = palette.color(at: 300)
+      self.plusIcon.tintColor = palette.color(at: 301)
+      self.deltaModel.tintColor = Color(uiColor: palette.color(at: 302))
+      self.commanderRecipientIcon.tintColor = palette.color(at: 303)
+    }
+    if animated {
+      UIView.transition(
+        with: contentContainer,
+        duration: 0.28,
+        options: [.transitionCrossDissolve, .allowUserInteraction],
+        animations: changes
+      )
+    } else {
+      changes()
+    }
   }
 
   func setPoisonCounters(_ value: Int, animated: Bool) {
     poisonCounters = max(0, value)
     poisonCounterView.prepare(value: poisonCounters, isInteractive: false)
+    poisonCounterView.setSeatColors(
+      seatColors,
+      seed: colorSeed,
+      animated: false
+    )
     poisonCounterView.setVisible(
       showsPoisonBadge && !isBeingEdited && firstPlayerChromeVisible,
       animated: false
@@ -337,7 +394,11 @@ class PlayerCellView: UIView {
     )
   }
 
-  func setFirstPlayerChromeVisible(_ visible: Bool, animated: Bool) {
+  func setFirstPlayerChromeVisible(
+    _ visible: Bool,
+    adjustmentIconsVisible: Bool? = nil,
+    animated: Bool
+  ) {
     firstPlayerChromeVisible = visible
     if !visible {
       cancelDeltaSession()
@@ -347,7 +408,10 @@ class PlayerCellView: UIView {
       visible && showsPoisonBadge && !isBeingEdited,
       animated: animated
     )
-    setAdjustmentIconsVisible(visible, animated: animated)
+    setAdjustmentIconsVisible(
+      adjustmentIconsVisible ?? visible,
+      animated: animated
+    )
   }
 
   func setAdjustmentChromeVisible(_ visible: Bool, animated: Bool) {
@@ -362,6 +426,8 @@ class PlayerCellView: UIView {
     hasLethalCommanderDamage: Bool,
     rotation: CGFloat
   ) {
+    let restoresCommanderRecipient = displayMode == .commanderRecipient
+    cancelCommanderRecipientLifeReveal()
     displayMode = .life
     self.rotation = rotation
     lifeTotal = value
@@ -370,7 +436,12 @@ class PlayerCellView: UIView {
       showsPoisonBadge && !isBeingEdited && firstPlayerChromeVisible,
       animated: false
     )
-    updateThresholdAppearance(animated: false)
+    if restoresCommanderRecipient {
+      dotNumberView.alpha = 0
+    } else {
+      commanderRecipientIcon.alpha = 0
+      updateThresholdAppearance(animated: false)
+    }
     dotNumberView.isAccessibilityElement = true
     dotNumberView.accessibilityIdentifier = "life-total"
     dotNumberView.accessibilityHint =
@@ -396,6 +467,8 @@ class PlayerCellView: UIView {
     sourcePlayerNumber: Int,
     viewerRotation: CGFloat
   ) {
+    cancelCommanderRecipientLifeReveal()
+    commanderRecipientIcon.alpha = 0
     displayMode = .commanderSource
     poisonCounterView.isHidden = true
     rotation = viewerRotation
@@ -422,11 +495,13 @@ class PlayerCellView: UIView {
   }
 
   func prepareCommanderRecipientDisplay(_ life: Int, viewerRotation: CGFloat) {
+    cancelCommanderRecipientLifeReveal()
     displayMode = .commanderRecipient
     poisonCounterView.isHidden = true
     rotation = viewerRotation
     lifeTotal = life
-    dotNumberView.alpha = Self.adjustIconAlpha
+    dotNumberView.alpha = 0
+    commanderRecipientIcon.alpha = 0
     dotNumberView.isAccessibilityElement = true
     dotNumberView.accessibilityIdentifier = "commander-recipient"
     dotNumberView.accessibilityHint = "Tap to exit commander damage mode"
@@ -441,6 +516,13 @@ class PlayerCellView: UIView {
     dotNumberView.accessibilityLabel = "Life total, \(life)"
     setNeedsLayout()
     layoutIfNeeded()
+    UIView.animate(
+      withDuration: Self.commanderRecipientFadeDuration,
+      delay: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]
+    ) {
+      self.commanderRecipientIcon.alpha = Self.adjustIconAlpha
+    }
   }
 
   @discardableResult
@@ -511,27 +593,72 @@ class PlayerCellView: UIView {
   }
 
   func animateRecipientFocus() {
+    cancelCommanderRecipientLifeReveal()
+    commanderRecipientIcon.alpha = 0
     cancelDeltaSession()
     setAdjustmentIconsVisible(false, animated: true)
     UIView.animate(
-      withDuration: 0.3,
+      withDuration: 0.22,
       delay: 0,
       options: [.beginFromCurrentState, .allowUserInteraction]
     ) {
-      self.dotNumberView.alpha = Self.adjustIconAlpha
+      self.dotNumberView.alpha = 0
     }
   }
 
   func animateRecipientRestore() {
-    dotNumberView.alpha = Self.adjustIconAlpha
+    cancelCommanderRecipientLifeReveal()
     setAdjustmentIconsVisible(true, animated: true)
     UIView.animate(
-      withDuration: 0.3,
+      withDuration: Self.commanderRecipientFadeDuration,
       delay: 0,
-      options: [.beginFromCurrentState, .allowUserInteraction]
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]
     ) {
+      self.commanderRecipientIcon.alpha = 0
       self.dotNumberView.alpha = self.thresholdAlpha
     }
+  }
+
+  private func revealCommanderRecipientLifeTotal() {
+    cancelCommanderRecipientLifeReveal()
+    let generation = commanderRecipientRevealGeneration
+
+    UIView.animate(
+      withDuration: Self.commanderRecipientFadeDuration,
+      delay: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]
+    ) {
+      self.commanderRecipientIcon.alpha = 0
+      self.dotNumberView.alpha = Self.adjustIconAlpha
+    }
+
+    let workItem = DispatchWorkItem { [weak self] in
+      guard let self,
+          generation == self.commanderRecipientRevealGeneration,
+          self.displayMode == .commanderRecipient else { return }
+      UIView.animate(
+        withDuration: Self.commanderRecipientFadeDuration,
+        delay: 0,
+        options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]
+      ) {
+        self.dotNumberView.alpha = 0
+        self.commanderRecipientIcon.alpha = Self.adjustIconAlpha
+      }
+      self.commanderRecipientHideWorkItem = nil
+    }
+    commanderRecipientHideWorkItem = workItem
+    DispatchQueue.main.asyncAfter(
+      deadline: .now()
+        + Self.commanderRecipientFadeDuration
+        + Self.commanderRecipientLifeHoldDuration,
+      execute: workItem
+    )
+  }
+
+  private func cancelCommanderRecipientLifeReveal() {
+    commanderRecipientRevealGeneration += 1
+    commanderRecipientHideWorkItem?.cancel()
+    commanderRecipientHideWorkItem = nil
   }
 
   func snapDotsToOff() {
@@ -557,7 +684,7 @@ class PlayerCellView: UIView {
 
   /// Active full-height interaction regions in `view` coordinates. The center
   /// matches the rendered number's width; the ± regions fill outward to the
-  /// player cell edges without exceeding them.
+  /// player cell edges and overlap its outer edges slightly.
   func interactionAreaRects(in view: UIView) -> [CGRect] {
     layoutIfNeeded()
     let zones: [TapZone]
@@ -703,7 +830,8 @@ class PlayerCellView: UIView {
     let candidateZones: [TapZone]
     switch displayMode {
     case .life:
-      candidateZones = [.center, .left, .right]
+      // Adjustment zones win only in their narrow overlap with the number.
+      candidateZones = [.left, .right, .center]
     case .commanderSource:
       candidateZones = [.left, .right]
     case .commanderRecipient:
@@ -723,12 +851,16 @@ class PlayerCellView: UIView {
       dx: dotNumberView.frame.minX,
       dy: dotNumberView.frame.minY
     )
+    let numberOverlap = min(
+      dotNumberView.actualDotSize,
+      numberRect.width / 2
+    )
     switch zone {
     case .left:
       return CGRect(
         x: cellRect.minX,
         y: cellRect.minY,
-        width: max(0, numberRect.minX - cellRect.minX),
+        width: max(0, numberRect.minX + numberOverlap - cellRect.minX),
         height: cellRect.height
       )
     case .center:
@@ -740,9 +872,9 @@ class PlayerCellView: UIView {
       )
     case .right:
       return CGRect(
-        x: numberRect.maxX,
+        x: numberRect.maxX - numberOverlap,
         y: cellRect.minY,
-        width: max(0, cellRect.maxX - numberRect.maxX),
+        width: max(0, cellRect.maxX - numberRect.maxX + numberOverlap),
         height: cellRect.height
       )
     }

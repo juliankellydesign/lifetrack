@@ -1,6 +1,7 @@
 import UIKit
 
 class GameBoardView: UIView {
+  private static let editingFadeDuration: TimeInterval = 0.26
   private var cellViews: [PlayerCellView] = []
   var onEditRequested: ((Int, CGFloat) -> Void)?
   var onLifeChanged: ((Int, Int) -> Void)?
@@ -8,9 +9,9 @@ class GameBoardView: UIView {
   var onCommanderModeExitRequested: (() -> Void)?
   /// Recipient index, source player id, and applied damage delta.
   var onCommanderDamageChanged: ((Int, Int, Int) -> Void)?
-  /// Fires when a swipe-to-reset gesture is committed. The caller clears player
-  /// state and presents the layout selector; choosing a layout later starts the
-  /// first-player selection animation.
+  /// Fires when a swipe-to-reset gesture is committed. The caller preserves the
+  /// current game behind the layout selector until the reset is confirmed by a
+  /// new layout choice or cancelled.
   var onResetRequested: (() -> Void)?
   /// Reports whether the lighthouse itself is actively sweeping so
   /// controller-owned chrome can disappear without disabling its hit targets.
@@ -294,7 +295,7 @@ class GameBoardView: UIView {
     }
 
     let phaseDuration =
-      DotDigitView.rippleWaveDuration + DotDigitView.animationDuration
+      DotDigitView.rippleWaveDuration + DotDigitView.rippleAnimationDuration
     let overlapDelay = DotDigitView.rippleWaveDuration / 2
     DispatchQueue.main.asyncAfter(deadline: .now() + overlapDelay) { [weak self] in
       guard let self, generation == self.commanderTransitionGeneration else { return }
@@ -360,18 +361,26 @@ class GameBoardView: UIView {
     }
   }
 
-  func setEditing(index: Int?) {
+  func setEditing(index: Int?, completion: (() -> Void)? = nil) {
     for (i, cell) in cellViews.enumerated() {
       cell.isBeingEdited = (i == index)
       if index != nil, i != index {
         cell.setAdjustmentChromeVisible(false, animated: true)
       }
     }
-    UIView.animate(withDuration: 0.35, delay: 0, options: .curveEaseInOut) {
-      for (i, cell) in self.cellViews.enumerated() {
-        cell.alpha = (index == nil || i == index) ? 1 : 0
+    UIView.animate(
+      withDuration: Self.editingFadeDuration,
+      delay: 0,
+      options: .curveEaseInOut,
+      animations: {
+        for (i, cell) in self.cellViews.enumerated() {
+          cell.alpha = (index == nil || i == index) ? 1 : 0
+        }
+      },
+      completion: { _ in
+        completion?()
       }
-    }
+    )
   }
 
   func restoreNoneditedAdjustmentChrome(excluding index: Int) {
@@ -440,7 +449,7 @@ class GameBoardView: UIView {
     skeletonShape.path = path.cgPath
 
     // Tap targets span each full cell height. The center follows the rendered
-    // number width; the ± targets fill the remaining width to the cell edges.
+    // number width; the ± targets fill outward and overlap its edges slightly.
     let tapPath = UIBezierPath()
     for i in slots.indices where i < cellViews.count {
       let cell = cellViews[i]
@@ -549,6 +558,11 @@ class GameBoardView: UIView {
     }
   }
 
+  /// Restores the existing board after the player cancels a committed reset.
+  func cancelCommittedReset() {
+    rollbackWipe()
+  }
+
   /// Establish the hidden-beam starting state before the layout selector fades.
   func prepareFirstPlayerSelection() {
     guard !cellViews.isEmpty else { return }
@@ -581,7 +595,11 @@ class GameBoardView: UIView {
     guard currentSlots.indices.contains(winner) else { return }
 
     if UIAccessibility.isReduceMotionEnabled {
-      landFirstPlayer(winner, generation: generation)
+      landFirstPlayer(
+        winner,
+        generation: generation,
+        revealsAdjustmentChromeImmediately: true
+      )
       return
     }
 
@@ -640,7 +658,11 @@ class GameBoardView: UIView {
       let generation = firstPlayerAnimationGeneration
       stopFirstPlayerSweepDisplayLink()
       prepareSkippedFirstPlayerLanding(winner: winner)
-      landFirstPlayer(winner, generation: generation)
+      landFirstPlayer(
+        winner,
+        generation: generation,
+        revealsAdjustmentChromeImmediately: true
+      )
       return true
     case .fading:
       finishFirstPlayerSelection()
@@ -727,7 +749,11 @@ class GameBoardView: UIView {
     let winner = firstPlayerSweepWinner
     let generation = firstPlayerSweepGeneration
     stopFirstPlayerSweepDisplayLink()
-    landFirstPlayer(winner, generation: generation)
+    landFirstPlayer(
+      winner,
+      generation: generation,
+      revealsAdjustmentChromeImmediately: false
+    )
   }
 
   private func updateFirstPlayerSweepHaptic(
@@ -801,13 +827,21 @@ class GameBoardView: UIView {
     }
   }
 
-  private func landFirstPlayer(_ winner: Int, generation: Int) {
+  private func landFirstPlayer(
+    _ winner: Int,
+    generation: Int,
+    revealsAdjustmentChromeImmediately: Bool
+  ) {
     guard generation == firstPlayerAnimationGeneration,
         cellViews.indices.contains(winner) else { return }
     firstPlayerAnimationPhase = .fading
 
     for (index, cell) in cellViews.enumerated() {
-      cell.setFirstPlayerChromeVisible(true, animated: true)
+      cell.setFirstPlayerChromeVisible(
+        true,
+        adjustmentIconsVisible: revealsAdjustmentChromeImmediately,
+        animated: true
+      )
       let isWinner = index == winner
       cell.setFirstPlayerEmphasis(
         alpha: isWinner ? 1 : Self.firstPlayerDimAlpha,
@@ -846,7 +880,10 @@ class GameBoardView: UIView {
         guard let self,
             generation == self.firstPlayerAnimationGeneration else { return }
         self.firstPlayerAnimationPhase = .idle
-        self.cellViews.forEach { $0.isUserInteractionEnabled = true }
+        self.cellViews.forEach {
+          $0.isUserInteractionEnabled = true
+          $0.setAdjustmentChromeVisible(true, animated: true)
+        }
       }
     }
   }

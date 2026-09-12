@@ -8,26 +8,26 @@
 
 /* Begin PBXBuildFile section */
 		11363E002FA88C9C0075A9FE /* appicon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 11363DFF2FA88C9C0075A9FE /* appicon.icon */; };
-		11A0D1012FB000010075A9FE /* ns_button_1.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1112FB000010075A9FE /* ns_button_1.wav */; };
-		11A0D1022FB000010075A9FE /* ns_button_2.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1122FB000010075A9FE /* ns_button_2.wav */; };
-		11A0D1032FB000010075A9FE /* ns_button_3.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1132FB000010075A9FE /* ns_button_3.wav */; };
-		11A0D1042FB000010075A9FE /* tonehigh.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1142FB000010075A9FE /* tonehigh.wav */; };
-		11A0D1052FB000010075A9FE /* short.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1152FB000010075A9FE /* short.wav */; };
-		11A0D1062FB000010075A9FE /* long.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1162FB000010075A9FE /* long.wav */; };
-		11A0D1072FB000010075A9FE /* ns_button_5.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1172FB000010075A9FE /* ns_button_5.wav */; };
-		11A0D1082FB000010075A9FE /* tonelow.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1182FB000010075A9FE /* tonelow.wav */; };
+		11A0D1012FB000010075A9FE /* scorebordsounds/ns_button_1.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1112FB000010075A9FE /* scorebordsounds/ns_button_1.wav */; };
+		11A0D1022FB000010075A9FE /* scorebordsounds/ns_button_2.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1122FB000010075A9FE /* scorebordsounds/ns_button_2.wav */; };
+		11A0D1032FB000010075A9FE /* scorebordsounds/ns_button_3.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1132FB000010075A9FE /* scorebordsounds/ns_button_3.wav */; };
+		11A0D1042FB000010075A9FE /* scorebordsounds/tonehigh.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1142FB000010075A9FE /* scorebordsounds/tonehigh.wav */; };
+		11A0D1052FB000010075A9FE /* scorebordsounds/short.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1152FB000010075A9FE /* scorebordsounds/short.wav */; };
+		11A0D1062FB000010075A9FE /* scorebordsounds/long.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1162FB000010075A9FE /* scorebordsounds/long.wav */; };
+		11A0D1072FB000010075A9FE /* scorebordsounds/ns_button_5.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1172FB000010075A9FE /* scorebordsounds/ns_button_5.wav */; };
+		11A0D1082FB000010075A9FE /* scorebordsounds/tonelow.wav in Resources */ = {isa = PBXBuildFile; fileRef = 11A0D1182FB000010075A9FE /* scorebordsounds/tonelow.wav */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		11363DFF2FA88C9C0075A9FE /* appicon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = appicon.icon; sourceTree = "<group>"; };
-		11A0D1112FB000010075A9FE /* ns_button_1.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/ns_button_1.wav; sourceTree = "<group>"; };
-		11A0D1122FB000010075A9FE /* ns_button_2.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/ns_button_2.wav; sourceTree = "<group>"; };
-		11A0D1132FB000010075A9FE /* ns_button_3.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/ns_button_3.wav; sourceTree = "<group>"; };
-		11A0D1142FB000010075A9FE /* tonehigh.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/tonehigh.wav; sourceTree = "<group>"; };
-		11A0D1152FB000010075A9FE /* short.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/short.wav; sourceTree = "<group>"; };
-		11A0D1162FB000010075A9FE /* long.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/long.wav; sourceTree = "<group>"; };
-		11A0D1172FB000010075A9FE /* ns_button_5.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/ns_button_5.wav; sourceTree = "<group>"; };
-		11A0D1182FB000010075A9FE /* tonelow.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/tonelow.wav; sourceTree = "<group>"; };
+		11A0D1112FB000010075A9FE /* scorebordsounds/ns_button_1.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/ns_button_1.wav; sourceTree = "<group>"; };
+		11A0D1122FB000010075A9FE /* scorebordsounds/ns_button_2.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/ns_button_2.wav; sourceTree = "<group>"; };
+		11A0D1132FB000010075A9FE /* scorebordsounds/ns_button_3.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/ns_button_3.wav; sourceTree = "<group>"; };
+		11A0D1142FB000010075A9FE /* scorebordsounds/tonehigh.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/tonehigh.wav; sourceTree = "<group>"; };
+		11A0D1152FB000010075A9FE /* scorebordsounds/short.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/short.wav; sourceTree = "<group>"; };
+		11A0D1162FB000010075A9FE /* scorebordsounds/long.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/long.wav; sourceTree = "<group>"; };
+		11A0D1172FB000010075A9FE /* scorebordsounds/ns_button_5.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/ns_button_5.wav; sourceTree = "<group>"; };
+		11A0D1182FB000010075A9FE /* scorebordsounds/tonelow.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = scorebordsounds/tonelow.wav; sourceTree = "<group>"; };
 		11B94AE22F8B3EDD00E5E5C6 /* lifetrack.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = lifetrack.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -56,14 +56,14 @@
 				11B94AE42F8B3EDD00E5E5C6 /* lifetrack */,
 				11B94AE32F8B3EDD00E5E5C6 /* Products */,
 				11363DFF2FA88C9C0075A9FE /* appicon.icon */,
-				11A0D1112FB000010075A9FE /* ns_button_1.wav */,
-				11A0D1122FB000010075A9FE /* ns_button_2.wav */,
-				11A0D1132FB000010075A9FE /* ns_button_3.wav */,
-				11A0D1142FB000010075A9FE /* tonehigh.wav */,
-				11A0D1152FB000010075A9FE /* short.wav */,
-				11A0D1162FB000010075A9FE /* long.wav */,
-				11A0D1172FB000010075A9FE /* ns_button_5.wav */,
-				11A0D1182FB000010075A9FE /* tonelow.wav */,
+				11A0D1112FB000010075A9FE /* scorebordsounds/ns_button_1.wav */,
+				11A0D1122FB000010075A9FE /* scorebordsounds/ns_button_2.wav */,
+				11A0D1132FB000010075A9FE /* scorebordsounds/ns_button_3.wav */,
+				11A0D1142FB000010075A9FE /* scorebordsounds/tonehigh.wav */,
+				11A0D1152FB000010075A9FE /* scorebordsounds/short.wav */,
+				11A0D1162FB000010075A9FE /* scorebordsounds/long.wav */,
+				11A0D1172FB000010075A9FE /* scorebordsounds/ns_button_5.wav */,
+				11A0D1182FB000010075A9FE /* scorebordsounds/tonelow.wav */,
 			);
 			sourceTree = "<group>";
 		};
@@ -140,14 +140,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				11363E002FA88C9C0075A9FE /* appicon.icon in Resources */,
-				11A0D1012FB000010075A9FE /* ns_button_1.wav in Resources */,
-				11A0D1022FB000010075A9FE /* ns_button_2.wav in Resources */,
-				11A0D1032FB000010075A9FE /* ns_button_3.wav in Resources */,
-				11A0D1042FB000010075A9FE /* tonehigh.wav in Resources */,
-				11A0D1052FB000010075A9FE /* short.wav in Resources */,
-				11A0D1062FB000010075A9FE /* long.wav in Resources */,
-				11A0D1072FB000010075A9FE /* ns_button_5.wav in Resources */,
-				11A0D1082FB000010075A9FE /* tonelow.wav in Resources */,
+				11A0D1012FB000010075A9FE /* scorebordsounds/ns_button_1.wav in Resources */,
+				11A0D1022FB000010075A9FE /* scorebordsounds/ns_button_2.wav in Resources */,
+				11A0D1032FB000010075A9FE /* scorebordsounds/ns_button_3.wav in Resources */,
+				11A0D1042FB000010075A9FE /* scorebordsounds/tonehigh.wav in Resources */,
+				11A0D1052FB000010075A9FE /* scorebordsounds/short.wav in Resources */,
+				11A0D1062FB000010075A9FE /* scorebordsounds/long.wav in Resources */,
+				11A0D1072FB000010075A9FE /* scorebordsounds/ns_button_5.wav in Resources */,
+				11A0D1082FB000010075A9FE /* scorebordsounds/tonelow.wav in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -285,14 +285,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = appicon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 7MGMK89TFV;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Scoreboard;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
@@ -308,22 +304,19 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 26.1;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = jfk.lifetrack;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				XROS_DEPLOYMENT_TARGET = 26.1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -332,14 +325,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = appicon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 7MGMK89TFV;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Scoreboard;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
@@ -355,22 +344,19 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 26.1;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = jfk.lifetrack;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				XROS_DEPLOYMENT_TARGET = 26.1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};

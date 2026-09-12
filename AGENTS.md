@@ -22,6 +22,7 @@ requires full screen, and disables idle sleep during play.
 Bundle ID: `jfk.lifetrack`.
 Home Screen display name: `Scoreboard`.
 Deployment target: iOS/iPadOS 26.1.
+Supported platforms: iOS and iPadOS only.
 Framework style: UIKit app, with SwiftUI hosted only where useful for rolling
 numeric text.
 External dependencies: none.
@@ -60,13 +61,15 @@ and `PlayerSeat.rotationDegrees` instead of comparing raw screen coordinates.
 
 ## Current User Experience
 
-- The app starts a 4-player `fourA` game by default.
+- A cold launch starts on the player-count/layout picker instead of creating a
+  default game. Choosing a layout creates the players and begins the lighthouse
+  sequence.
 - The launch screen, app window, and game board use a solid black background.
 - Two-player games start at 20 life; all other layouts start at 40.
 - Tap a player's minus/plus region for life -1/+1, registered on touch-down.
   Each target spans the full player-cell height, is at least the 20pt icon plus
-  20pt inline padding on both sides, and expands outward to the cell edge when
-  more space is available.
+  20pt inline padding on both sides, reaches the cell edge when more space is
+  available, and extends one rendered dot diameter into the number.
 - Applied increments play `ns_button_1`; applied decrements play `ns_button_2`.
   Keypad keys, seat-color chips, layout choices, and debug-toolbar buttons play
   `ns_button_3` on touch-down. Sounds use an ambient audio session, respect the
@@ -95,6 +98,9 @@ and `PlayerSeat.rotationDegrees` instead of comparing raw screen coordinates.
 - Tap anywhere within a rendered life total to enter commander-damage mode with
   that player as the recipient.
 - Hold anywhere within the rendered life total for 0.5s to open exact life input.
+- Exact-life editor controls begin fading in only after every non-edited board
+  number has finished fading completely out, preventing the two states from
+  overlapping visually.
 - Exact life input includes six OKLCH dot-shaped seat-color chips above the life total:
   colorless, white, blue, black, red, and green. Colorless is exclusive; one
   through five mana colors can be combined, and the choice stays with that
@@ -102,6 +108,11 @@ and `PlayerSeat.rotationDegrees` instead of comparing raw screen coordinates.
   the app's 30% dimmed opacity; colorless life dots remain full white. White
   mana is a deep, saturated cream-yellow; and black mana is a light muted
   purple.
+- A player's deterministic mixed seat-color palette also colors all UI tied to
+  that player: board adjustment icons and delta readout, editor keypad numerals
+  and action icons, and the poison icon, count, and adjustment controls. Each
+  element receives a stable varied blend from the same palette; colorless
+  players retain white UI.
 - Exact life input also includes a poison-counter control below the life total,
   aligned with the keypad's bottom row in side-player layouts. At zero it shows
   the poison icon and the standard dimmed plus icon; after the first
@@ -124,6 +135,15 @@ and `PlayerSeat.rotationDegrees` instead of comparing raw screen coordinates.
   The × and checkmark scale up on press without changing opacity.
 - Swipe across the board to reset. A committed reset wipes cells off, shows the
   layout selector, then starts a clockwise lighthouse sweep after selection.
+  The reset selector also shows a centered X in its upper gutter; tapping it
+  cancels the reset and restores the unchanged game. The X is absent on cold
+  launch, where there is no game to restore.
+- The layout selector shows four dimmed 16pt Karl gameplay tips, centered in
+  the lower gutter between its picker grid and playable-area bottom: commander
+  damage, manual editing, reset, then “Have fun.” Each fades in and out before
+  the next; the first three hold for three seconds and the final tip holds for
+  five seconds. The sequence runs once per presentation, and tapping the
+  current tip advances it immediately.
 - The lighthouse beam rotates clockwise from the board center, flashing each
   active life-total dot individually as it crosses it, accelerates, and lands
   on a random starting player.
@@ -134,6 +154,9 @@ and `PlayerSeat.rotationDegrees` instead of comparing raw screen coordinates.
 - The chosen player's life stays bright while every other life total begins
   fully invisible and fades from zero to full opacity over three seconds. A
   screen interaction completes that fade with a short spring and is consumed.
+  After an uninterrupted lighthouse sweep, the minus and plus controls remain
+  hidden until that three-second life-total fade has fully completed. Skipping
+  the sweep restores them immediately at landing.
 - Entering commander mode sends a radial dot ripple from the recipient's life
   total. Every other cell becomes the damage dealt by that source player to the
   recipient, starts at zero, and rotates to face the recipient. The outgoing
@@ -148,13 +171,20 @@ and `PlayerSeat.rotationDegrees` instead of comparing raw screen coordinates.
 - VoiceOver marks a life total as defeated when it is at or below 0 or the
   player has lethal commander damage or 10 poison counters, and marks
   commander-source totals at or above 21 as lethal.
-- The recipient's live life total stays visible at 30% opacity without adjust
-  controls. Tap the rendered number to exit with the reverse radial ripple.
+- The recipient's life total is replaced in focused commander mode by a dimmed
+  32pt X centered exactly over the rendered number. When commander damage
+  changes, the X fades out while the updated life total fades in at 30% opacity.
+  The life total remains visible for 0.5 seconds after the latest change, then
+  fades back to the X; rapid or held changes extend that visibility window.
+  Tap the centered X/number region to exit with the reverse radial ripple.
 - Commander damage is assigned only in focused commander mode, not in the exact
   life input overlay.
-- The bottom-right debug toolbar has two buttons: dot-font cycle and layout
-  grid/tap targets. It remains visible and functional on the board, layout
-  selector, and exact-life editor, but still hides during the lighthouse sweep.
+- The bottom-right debug toolbar retains its dot-font cycle and layout-grid/tap
+  target controls in code. `GameViewController.showsDebugControls` is enabled
+  under the `DEBUG` compilation condition and disabled otherwise, so it appears
+  automatically in development builds and is compiled out of Release/TestFlight
+  builds. It is available on the board, layout selector, and exact-life editor,
+  but still hides during the lighthouse sweep.
 - The dot-font cycle advances through tall, narrow, normal, wide, xwide, and
   xxwide bitmap styles. Their exact grids are tall 3 by 7, narrow 3 by 5,
   normal 4 by 5, wide 5 by 5, xwide 6 by 5, and xxwide 7 by 5.
@@ -201,6 +231,9 @@ Models:
 - `lifetrack/Models/SeatColor.swift` - the six seat-color choices, their OKLCH
   coordinates, deterministic per-dot variance, neutral-center interpolation,
   gamut fitting, and sRGB output.
+- `lifetrack/Models/PlayerColorPalette.swift` - deterministic stable color
+  blends shared by a player's life dots, adjustment chrome, keypad, and poison
+  controls.
 - `lifetrack/Models/PlayerLayout.swift` - all layout variants, `PlayerSeat`,
   `BoardInsets`, and selector display order.
 - `playercounts/*.svg` - canonical source artwork for schematic seat dots. When
@@ -239,7 +272,8 @@ Input and selector:
   `×`, `0`, done checkmark) and key frames for overlay skeleton drawing.
   Tapping the life total also confirms/dismisses the overlay.
 - `lifetrack/Views/LayoutSelectorView.swift` - full-screen 2-column by 4-row
-  selector for all player-count/layout variants.
+  selector for all player-count/layout variants, including the reset-only
+  cancel control centered in the upper gutter.
 
 Dot and typography systems:
 
@@ -247,7 +281,8 @@ Dot and typography systems:
   setting, `ChangeDirection`, and row-stagger timing.
 - `lifetrack/Views/DotDigitView.swift` - one digit as animated UIKit dot views,
   including deterministic OKLCH color assignment, per-dot edit heroes,
-  lighthouse-beam projection, and additive organic shake.
+  velocity-driven directional deformation, lighthouse-beam projection, and
+  additive organic shake.
 - `lifetrack/Views/DotNumberView.swift` - number splitting, dot-size fitting,
   digit layout, global font-change rebuilds, and sweep/reset forwarding.
 - `lifetrack/Views/RollingNumberText.swift` - hosted SwiftUI rolling numeric
@@ -325,7 +360,6 @@ the minimum fitting size, capped at 18pt, so board dots stay uniform. Individual
 numbers scale down further when their digit count needs more room between the
 minimum-width adjustment targets. The input overlay caps its editable life-total
 dots at 28pt so the number stays prominent without overwhelming the keypad.
-
 The seat-color chips use that same live dot size and corner-radius ratio. Their
 row spans exactly the rendered width of a two-digit value in the default wide
 5 by 5 font, matching the outer edges of the default `40` life total. In
@@ -360,11 +394,14 @@ Current content margins:
 Important touch behavior:
 
 - The life-total interaction zone matches the rendered number's width and spans
-  the full player-cell height. A tap enters commander mode; a 0.5-second hold
-  opens exact life input.
+  the full player-cell height, except its outer one-dot-wide strips are shared
+  with and yield to the adjustment targets. A tap enters commander mode; a
+  0.5-second hold opens exact life input.
 - Each adjustment target spans the full player-cell height, reserves at least
   60pt of player-facing width for its 20pt icon and 20pt inline padding, and
-  expands from the number to the corresponding cell edge when space allows.
+  expands from the corresponding cell edge to one rendered dot diameter inside
+  the number. In those overlaps, the adjustment target takes precedence over
+  the life-total gesture target.
 - Number fitting reserves both minimum adjustment widths and scales the life
   total down when needed, so no adjustment target extends beyond its cell.
 - Targets are defined in the player's rotated content coordinate space, so
@@ -378,6 +415,15 @@ Important touch behavior:
 ## Animation and Haptics
 
 - Life dot changes animate with row-staggered UIKit spring animations.
+- Whenever dots travel through space during edit heroes, commander ripples,
+  adjustment shakes, or retained-keypad-digit relayout, their painted faces
+  rotate toward their instantaneous velocity and stretch along it. A saturating
+  smoothstep response keeps slow movement subtle while fast movement approaches
+  the full travel angle, up to 16% lengthwise stretch and 5% cross-axis squash.
+  Directional deformation lives on an inner face layer so it composes with the
+  outer dot's existing position, visibility, and scale animations. Reduce Motion
+  disables the directional deformation while each motion system retains its
+  existing accessibility behavior.
 - Changing a seat-color chip crossfades every dot to its new deterministic
   OKLCH palette with a few milliseconds of stable per-dot delay. Chips animate
   between dimmed and selected outlined states and provide selection haptics.
@@ -386,20 +432,22 @@ Important touch behavior:
   springs it back on release or cancel. Keep this press transform off
   `dotNumberView` itself because life-delta updates relayout that view.
 - Opening and closing exact life input use mirrored directional per-dot heroes.
-  Dots on the leading edge of travel begin first, with up to 160ms of stagger
-  across the pattern and up to 24ms of stable per-dot noise. Exit recalculates
+  Dots on the leading edge of travel begin first, with up to 120ms of stagger
+  across the pattern and up to 18ms of stable per-dot noise. Exit recalculates
   the leading edge toward the original board position, naturally flipping the
   delay order. The delayed trailing dots temporarily exaggerate spacing like a
-  stretched slinky before each dot springs into place.
-- Commander-mode transitions use the same 0.3-second per-dot spring as ordinary
-  digit rolls, with radial delays based on distance from the recipient's number.
+  stretched slinky before each dot springs into place. The hero uses a
+  0.36-second spring with up to 120ms of stagger; its surrounding board and
+  editor-chrome fades are shortened proportionally.
+- Commander-mode transitions use a 0.32-second per-dot spring with 0.62 damping
+  and a 0.24-second radial wave based on distance from the recipient's number.
   As the wavefront reaches each dot, an additive position pulse briefly pushes
   it away from the recipient like a displacement map before it settles without
   changing the dot's model-layer layout. Exiting reverses that displacement,
   pulling reached dots toward the recipient as the wave collapses edge-in.
-  Ripple-out delays include up to 48ms of stable per-dot timing noise so nearby
+  Ripple-out delays include up to 36ms of stable per-dot timing noise so nearby
   dots do not collapse in perfectly uniform rings.
-  The incoming ripple begins halfway through the outgoing wave delay (0.16
+  The incoming ripple begins halfway through the outgoing wave delay (0.12
   seconds after it starts), so both number states share the midpoint. Entry
   expands center-out; exit reverses the timing and collapses edge-in. On exit,
   focused recipient orientation clears at that midpoint before the incoming
@@ -432,8 +480,10 @@ Important touch behavior:
   following fade is also consumed and completes the reveal. Neither touch
   activates an underlying game or toolbar control.
 - Player controls, toolbar chrome, and debug skeletons snap invisible when the
-  lighthouse starts and return as soon as it lands. The minus and plus controls
-  use their shared fade-and-scale visibility transition in both directions.
+  lighthouse starts. Toolbar chrome and debug skeletons return as soon as it
+  lands; minus and plus controls wait for an uninterrupted reveal to finish,
+  but return at landing after a skip. The minus and plus controls use their
+  shared fade-and-scale visibility transition in both directions.
 - The selected first player's active dots receive a strong independent-dot
   shake on landing. Life and commander-damage shake intensity follows the
   absolute accumulated value in the transient +/- readout: +/-1 starts with a

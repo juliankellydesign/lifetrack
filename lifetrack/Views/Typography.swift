@@ -42,4 +42,9 @@ enum Typography {
   static let lifeDelta = Style(
     face: Karl.medium, size: 28, lineHeight: 32
   )
+
+  /// One-line gameplay guidance beneath the player-layout picker.
+  static let gameplayTip = Style(
+    face: Karl.medium, size: 16, lineHeight: 20
+  )
 }

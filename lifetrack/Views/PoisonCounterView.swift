@@ -23,6 +23,7 @@ final class PoisonCounterView: UIView {
   private var valueView: UIView { valueHost.view }
   private var isInteractive = false
   private var value = 0
+  private var palette = PlayerColorPalette(colors: [.colorless], seed: 0)
 
   private var iconSize: CGFloat {
     isInteractive ? NumberPadView.actionIconSize : Self.boardIconSize
@@ -55,6 +56,26 @@ final class PoisonCounterView: UIView {
     setNeedsLayout()
   }
 
+  func setSeatColors(_ colors: Set<SeatColor>, seed: Int, animated: Bool) {
+    palette = PlayerColorPalette(colors: colors, seed: seed)
+    let changes = {
+      self.poisonIconView.tintColor = self.palette.color(at: 202)
+      self.minusButton.tintColor = self.palette.color(at: 203)
+      self.plusButton.tintColor = self.palette.color(at: 204)
+      self.valueModel.tintColor = Color(uiColor: self.palette.color(at: 205))
+    }
+    if animated {
+      UIView.transition(
+        with: self,
+        duration: 0.28,
+        options: [.transitionCrossDissolve, .allowUserInteraction],
+        animations: changes
+      )
+    } else {
+      changes()
+    }
+  }
+
   func setValue(_ value: Int, animated: Bool) {
     let next = max(0, value)
     guard next != self.value else { return }
@@ -80,6 +101,14 @@ final class PoisonCounterView: UIView {
     }
 
     if hasValue != hadValue {
+      if hasValue {
+        // Newly revealed controls still carry their hidden-state frames until
+        // layout runs. Settle them at their destination before animating so
+        // the transition changes only opacity and scale, never position.
+        UIView.performWithoutAnimation {
+          self.layoutIfNeeded()
+        }
+      }
       var appearingViews: [UIView] = hasValue ? [valueView] : []
       if hasValue, isInteractive {
         appearingViews.append(minusButton)
@@ -202,7 +231,8 @@ final class PoisonCounterView: UIView {
   }
 
   private func setup() {
-    poisonIconView.image = UIImage(named: "icon-poison")
+    poisonIconView.image = UIImage(named: "icon-poison")?
+      .withRenderingMode(.alwaysTemplate)
     poisonIconView.contentMode = .scaleAspectFit
     poisonIconView.isAccessibilityElement = false
     addSubview(poisonIconView)
