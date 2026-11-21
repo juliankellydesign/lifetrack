@@ -830,7 +830,7 @@ class PlayerCellView: UIView {
     let candidateZones: [TapZone]
     switch displayMode {
     case .life:
-      // Adjustment zones win only in their narrow overlap with the number.
+      // Adjustment zones win in their overlap with the number's outer thirds.
       candidateZones = [.left, .right, .center]
     case .commanderSource:
       candidateZones = [.left, .right]
@@ -851,10 +851,10 @@ class PlayerCellView: UIView {
       dx: dotNumberView.frame.minX,
       dy: dotNumberView.frame.minY
     )
-    let numberOverlap = min(
-      dotNumberView.actualDotSize,
-      numberRect.width / 2
-    )
+    // Each adjustment target claims the outer third of the rendered number,
+    // so a near miss still adjusts life; only the middle third opens
+    // commander damage or exact life input.
+    let numberOverlap = numberRect.width / 3
     switch zone {
     case .left:
       return CGRect(

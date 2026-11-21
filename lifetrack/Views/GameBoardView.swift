@@ -449,7 +449,7 @@ class GameBoardView: UIView {
     skeletonShape.path = path.cgPath
 
     // Tap targets span each full cell height. The center follows the rendered
-    // number width; the ± targets fill outward and overlap its edges slightly.
+    // number width; the ± targets fill outward and overlap its outer thirds.
     let tapPath = UIBezierPath()
     for i in slots.indices where i < cellViews.count {
       let cell = cellViews[i]
