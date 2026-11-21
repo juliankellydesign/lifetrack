@@ -411,8 +411,8 @@ Important touch behavior:
 - `GameBoardView` claims the screen-edge gutters around the playable board in
   `point(inside:)` and hit-tests each gutter touch at the nearest board point;
   `PlayerCellView.touchesBegan` clamps the touch location into the cell before
-  choosing a zone. Touch-up locations are not clamped. The orange debug
-  geometry does not draw this gutter extension.
+  choosing a zone, and clamps the release of a gutter-begun touch the same
+  way. The orange debug geometry does not draw this gutter extension.
 - Number fitting reserves both minimum adjustment widths and scales the life
   total down when needed, so no adjustment target extends beyond its cell.
 - Targets are defined in the player's rotated content coordinate space, so
