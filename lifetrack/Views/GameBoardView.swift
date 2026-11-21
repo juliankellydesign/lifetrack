@@ -403,6 +403,25 @@ class GameBoardView: UIView {
 
   // MARK: - Layout
 
+  // The board is inset from the physical screen, but a reach across the table
+  // often lands in that gutter. Claim it and forward each gutter touch to the
+  // nearest board point so the adjoining cell handles it.
+  override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    bounds.insetBy(
+      dx: -BoardInsets.leftRight,
+      dy: -BoardInsets.topBottom
+    ).contains(point)
+  }
+
+  override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    guard !bounds.isEmpty else { return super.hitTest(point, with: event) }
+    let nearest = CGPoint(
+      x: min(max(point.x, bounds.minX), bounds.maxX - 0.5),
+      y: min(max(point.y, bounds.minY), bounds.maxY - 0.5)
+    )
+    return super.hitTest(nearest, with: event)
+  }
+
   override func layoutSubviews() {
     super.layoutSubviews()
     let slots = layoutSlots(for: layout, in: bounds.size)

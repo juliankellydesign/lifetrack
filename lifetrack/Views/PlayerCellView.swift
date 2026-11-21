@@ -703,8 +703,11 @@ class PlayerCellView: UIView {
   // MARK: - Touch handling
 
   override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+    // Touches forwarded from the screen-edge gutters land outside the cell;
+    // clamp them to the nearest point so they hit the adjoining target.
     guard !isTouching, let touch = touches.first,
-        let zone = tapZone(at: touch.location(in: self)) else { return }
+        let zone = tapZone(at: touch.location(in: self).clamped(to: bounds))
+    else { return }
     isTouching = true
     activeTapZone = zone
     didActivateCenterHold = false
@@ -1165,4 +1168,13 @@ class PlayerCellView: UIView {
     icon.transform = CGAffineTransform(scaleX: scale, y: scale)
   }
 
+}
+
+private extension CGPoint {
+  func clamped(to rect: CGRect) -> CGPoint {
+    CGPoint(
+      x: min(max(x, rect.minX), rect.maxX - 0.5),
+      y: min(max(y, rect.minY), rect.maxY - 0.5)
+    )
+  }
 }

@@ -70,6 +70,9 @@ and `PlayerSeat.rotationDegrees` instead of comparing raw screen coordinates.
   Each target spans the full player-cell height, is at least the 20pt icon plus
   20pt inline padding on both sides, reaches the cell edge when more space is
   available, and covers the adjacent outer third of the rendered number.
+- Touches in the screen-edge gutters outside the playable board (8pt at the
+  sides, 52pt at the top and bottom) act on the nearest board point, so the
+  outermost targets effectively reach the physical screen edge.
 - Applied increments play `ns_button_1`; applied decrements play `ns_button_2`.
   Keypad keys, seat-color chips, layout choices, and debug-toolbar buttons play
   `ns_button_3` on touch-down. Sounds use an ambient audio session, respect the
@@ -405,6 +408,11 @@ Important touch behavior:
   the rendered number, so a near miss toward the number still adjusts life. In
   those overlaps, the adjustment target takes precedence over the life-total
   gesture target.
+- `GameBoardView` claims the screen-edge gutters around the playable board in
+  `point(inside:)` and hit-tests each gutter touch at the nearest board point;
+  `PlayerCellView.touchesBegan` clamps the touch location into the cell before
+  choosing a zone. Touch-up locations are not clamped. The orange debug
+  geometry does not draw this gutter extension.
 - Number fitting reserves both minimum adjustment widths and scales the life
   total down when needed, so no adjustment target extends beyond its cell.
 - Targets are defined in the player's rotated content coordinate space, so
