@@ -10,8 +10,10 @@ class PlayerCellView: UIView {
   /// ± adjust-direction icons flanking the life total (minus on the player's
   /// left, plus on the right). Part of the 4pt grid / units-of-20 system:
   /// 20×20 icons, 20pt gap from the digits, dimmed to 30% opacity.
-  private static let adjustIconSize: CGFloat = 32
+  private static let adjustIconSize: CGFloat = 24
   private static let adjustIconSpacing: CGFloat = 20
+  /// Smallest gap the net-change readout may close to in a tight cell.
+  private static let adjustIconMinimumSpacing: CGFloat = 4
   /// Width reserved beside the number for each adjustment target. It holds the
   /// icon and its gap to the number, and sets how wide the number may render.
   static let minimumAdjustmentTargetWidth: CGFloat = 60
@@ -136,8 +138,8 @@ class PlayerCellView: UIView {
     commanderRecipientIcon.isUserInteractionEnabled = false
     commanderRecipientIcon.isAccessibilityElement = false
     numberPressContainer.addSubview(commanderRecipientIcon)
-    configureAdjustIcon(minusIcon, named: "IconMinus")
-    configureAdjustIcon(plusIcon, named: "IconPlus")
+    configureAdjustIcon(minusIcon, named: "IconMinusBold")
+    configureAdjustIcon(plusIcon, named: "IconPlusBold")
     poisonCounterView.prepare(value: 0, isInteractive: false)
     poisonCounterView.isHidden = true
     contentContainer.addSubview(poisonCounterView)
@@ -227,14 +229,25 @@ class PlayerCellView: UIView {
     let dGap = Self.deltaSpacing
     let labelY = numRect.midY - dH / 2
 
-    // Plus icon never moves — a positive readout slots in outboard (to its right).
-    let plusX = numRect.maxX + gap
+    // In a tight cell the readout side closes its gap to the number, down to
+    // the minimum, before the icon or digits spill into the adjoining cell.
+    let readoutWidth = iconSize + dGap + dW
+    let cellMinX = contentContainer.bounds.minX - Self.contentInset
+    let cellMaxX = contentContainer.bounds.maxX + Self.contentInset
+    func readoutGap(room: CGFloat) -> CGFloat {
+      min(gap, max(Self.adjustIconMinimumSpacing, room - readoutWidth))
+    }
+
+    // A positive readout slots in outboard of the plus icon (to its right).
+    let plusX = numRect.maxX
+      + (sessionDelta > 0 ? readoutGap(room: cellMaxX - numRect.maxX) : gap)
     placeAdjustmentIcon(plusIcon, x: plusX, y: iconY)
 
     if sessionDelta < 0 {
       // Negative: the digits go between the minus icon and the number, so the
       // minus icon slides left to open that room (animated by registerDelta).
-      let labelX = numRect.minX - gap - dW
+      let labelX = numRect.minX
+        - readoutGap(room: numRect.minX - cellMinX) - dW
       deltaView.frame = CGRect(x: labelX, y: labelY, width: dW, height: dH)
       placeAdjustmentIcon(
         minusIcon,
