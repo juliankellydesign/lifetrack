@@ -69,7 +69,10 @@ and `PlayerSeat.rotationDegrees` instead of comparing raw screen coordinates.
 - Tap a player's minus/plus region for life -1/+1, registered on touch-down.
   Each target spans the full player-cell height, is at least the 20pt icon plus
   20pt inline padding on both sides, reaches the cell edge when more space is
-  available, and extends one rendered dot diameter into the number.
+  available, and covers the adjacent outer third of the rendered number.
+- Touches in the screen-edge gutters outside the playable board (8pt at the
+  sides, 52pt at the top and bottom) act on the nearest board point, so the
+  outermost targets effectively reach the physical screen edge.
 - Applied increments play `ns_button_1`; applied decrements play `ns_button_2`.
   Keypad keys, seat-color chips, layout choices, and debug-toolbar buttons play
   `ns_button_3` on touch-down. Sounds use an ambient audio session, respect the
@@ -95,9 +98,10 @@ and `PlayerSeat.rotationDegrees` instead of comparing raw screen coordinates.
   above 0 stops at exactly 0; a fresh gesture may cross below 0 and continue.
 - Life totals also dim to 30% opacity when a player reaches 10 poison counters,
   matching the defeated appearance for zero life or lethal commander damage.
-- Tap anywhere within a rendered life total to enter commander-damage mode with
-  that player as the recipient.
-- Hold anywhere within the rendered life total for 0.5s to open exact life input.
+- Tap the middle third of a rendered life total to enter commander-damage mode
+  with that player as the recipient.
+- Hold the middle third of the rendered life total for 0.5s to open exact life
+  input.
 - Exact-life editor controls begin fading in only after every non-edited board
   number has finished fading completely out, preventing the two states from
   overlapping visually.
@@ -394,14 +398,21 @@ Current content margins:
 Important touch behavior:
 
 - The life-total interaction zone matches the rendered number's width and spans
-  the full player-cell height, except its outer one-dot-wide strips are shared
-  with and yield to the adjustment targets. A tap enters commander mode; a
-  0.5-second hold opens exact life input.
+  the full player-cell height, except its outer thirds are shared with and
+  yield to the adjustment targets, leaving the middle third in life mode. A tap
+  enters commander mode; a 0.5-second hold opens exact life input. The
+  commander-recipient exit target keeps the full number width.
 - Each adjustment target spans the full player-cell height, reserves at least
   60pt of player-facing width for its 20pt icon and 20pt inline padding, and
-  expands from the corresponding cell edge to one rendered dot diameter inside
-  the number. In those overlaps, the adjustment target takes precedence over
-  the life-total gesture target.
+  expands from the corresponding cell edge through the adjacent outer third of
+  the rendered number, so a near miss toward the number still adjusts life. In
+  those overlaps, the adjustment target takes precedence over the life-total
+  gesture target.
+- `GameBoardView` claims the screen-edge gutters around the playable board in
+  `point(inside:)` and hit-tests each gutter touch at the nearest board point;
+  `PlayerCellView.touchesBegan` clamps the touch location into the cell before
+  choosing a zone, and clamps the release of a gutter-begun touch the same
+  way. The orange debug geometry does not draw this gutter extension.
 - Number fitting reserves both minimum adjustment widths and scales the life
   total down when needed, so no adjustment target extends beyond its cell.
 - Targets are defined in the player's rotated content coordinate space, so

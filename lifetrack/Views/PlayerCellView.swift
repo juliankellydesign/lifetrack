@@ -85,6 +85,7 @@ class PlayerCellView: UIView {
   private var centerHoldTimer: Timer?
   private var commanderRecipientHideWorkItem: DispatchWorkItem?
   private var commanderRecipientRevealGeneration = 0
+  private var activeTouchBeganInGutter = false
   private var isTouching = false
   private var activeTapZone: TapZone?
   private var didActivateCenterHold = false
@@ -703,8 +704,15 @@ class PlayerCellView: UIView {
   // MARK: - Touch handling
 
   override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-    guard !isTouching, let touch = touches.first,
-        let zone = tapZone(at: touch.location(in: self)) else { return }
+    guard !isTouching, let touch = touches.first else { return }
+    // Touches forwarded from the screen-edge gutters land outside the cell;
+    // clamp them to the nearest point so they hit the adjoining target.
+    let location = touch.location(in: self)
+    let beganInGutter = !bounds.contains(location)
+    guard let zone = tapZone(
+      at: beganInGutter ? location.clamped(to: bounds) : location
+    ) else { return }
+    activeTouchBeganInGutter = beganInGutter
     isTouching = true
     activeTapZone = zone
     didActivateCenterHold = false
@@ -753,10 +761,17 @@ class PlayerCellView: UIView {
   override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
     if displayMode == .life, activeTapZone == .center,
         !didActivateCenterHold, let touch = touches.first,
-        tapZone(at: touch.location(in: self)) == .center {
+        tapZone(at: releaseLocation(of: touch)) == .center {
       onCommanderModeRequested?()
     }
     endTouch()
+  }
+
+  /// A touch that began in a screen-edge gutter is still outside the cell when
+  /// it lifts, so it is projected the same way it was on touch-down.
+  private func releaseLocation(of touch: UITouch) -> CGPoint {
+    let location = touch.location(in: self)
+    return activeTouchBeganInGutter ? location.clamped(to: bounds) : location
   }
 
   override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -798,6 +813,7 @@ class PlayerCellView: UIView {
     activeTapZone = nil
     didActivateCenterHold = false
     repeatBoundary = nil
+    activeTouchBeganInGutter = false
   }
 
   private func setNumberPressed(_ isPressed: Bool) {
@@ -830,7 +846,7 @@ class PlayerCellView: UIView {
     let candidateZones: [TapZone]
     switch displayMode {
     case .life:
-      // Adjustment zones win only in their narrow overlap with the number.
+      // Adjustment zones win in their overlap with the number's outer thirds.
       candidateZones = [.left, .right, .center]
     case .commanderSource:
       candidateZones = [.left, .right]
@@ -851,10 +867,10 @@ class PlayerCellView: UIView {
       dx: dotNumberView.frame.minX,
       dy: dotNumberView.frame.minY
     )
-    let numberOverlap = min(
-      dotNumberView.actualDotSize,
-      numberRect.width / 2
-    )
+    // Each adjustment target claims the outer third of the rendered number,
+    // so a near miss still adjusts life; only the middle third opens
+    // commander damage or exact life input.
+    let numberOverlap = numberRect.width / 3
     switch zone {
     case .left:
       return CGRect(
@@ -1165,4 +1181,16 @@ class PlayerCellView: UIView {
     icon.transform = CGAffineTransform(scaleX: scale, y: scale)
   }
 
+}
+
+private extension CGPoint {
+  /// Nearest point strictly inside `rect`, so it stays inside the half-open
+  /// tap zones after any seat rotation.
+  func clamped(to rect: CGRect) -> CGPoint {
+    let inner = rect.insetBy(dx: min(0.5, rect.width / 2), dy: min(0.5, rect.height / 2))
+    return CGPoint(
+      x: min(max(x, inner.minX), inner.maxX),
+      y: min(max(y, inner.minY), inner.maxY)
+    )
+  }
 }
