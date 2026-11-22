@@ -67,9 +67,8 @@ and `PlayerSeat.rotationDegrees` instead of comparing raw screen coordinates.
 - The launch screen, app window, and game board use a solid black background.
 - Two-player games start at 20 life; all other layouts start at 40.
 - Tap a player's minus/plus region for life -1/+1, registered on touch-down.
-  Each target spans the full player-cell height, is at least the 20pt icon plus
-  20pt inline padding on both sides, reaches the cell edge when more space is
-  available, and covers the adjacent outer third of the rendered number.
+  Each target spans the full player-cell height, is at least 60pt wide around
+  its 32pt icon, reaches the cell edge when more space is available, and covers the adjacent outer third of the rendered number.
 - Touches in the screen-edge gutters outside the playable board (8pt at the
   sides, 52pt at the top and bottom) act on the nearest board point, so the
   outermost targets effectively reach the physical screen edge.
@@ -327,8 +326,9 @@ The spatial system has two coordinated layers:
 
 - A 4pt base unit governs fixed measurements. The physical playable board uses
   8pt side insets and 52pt top/bottom insets. The visible major rhythm is five
-  base units, or 20pt. Board dots target 18pt on a 20pt pitch; adjustment icons,
-  icon spacing, icon target padding, and the debug grid use that same 20pt step.
+  base units, or 20pt. Board dots target 18pt on a 20pt pitch; the gap
+  between each adjustment icon and the number and the debug grid use that same
+  20pt step. Board adjustment icons are 32pt, matching the keypad action icons.
 - `PlayerLayout.cellRect` defines responsive seat geometry in normalized 0...1
   board coordinates. `GameBoardView` projects those fractions into the playable
   board on each screen size. Adjacent rectangles share their normalized edge
@@ -403,7 +403,7 @@ Important touch behavior:
   enters commander mode; a 0.5-second hold opens exact life input. The
   commander-recipient exit target keeps the full number width.
 - Each adjustment target spans the full player-cell height, reserves at least
-  60pt of player-facing width for its 20pt icon and 20pt inline padding, and
+  60pt of player-facing width for its 32pt icon and the 20pt gap to the number, and
   expands from the corresponding cell edge through the adjacent outer third of
   the rendered number, so a near miss toward the number still adjusts life. In
   those overlaps, the adjustment target takes precedence over the life-total

@@ -10,11 +10,11 @@ class PlayerCellView: UIView {
   /// ± adjust-direction icons flanking the life total (minus on the player's
   /// left, plus on the right). Part of the 4pt grid / units-of-20 system:
   /// 20×20 icons, 20pt gap from the digits, dimmed to 30% opacity.
-  private static let adjustIconSize: CGFloat = 20
+  private static let adjustIconSize: CGFloat = 32
   private static let adjustIconSpacing: CGFloat = 20
-  private static let adjustTargetPadding: CGFloat = 20
-  static let minimumAdjustmentTargetWidth =
-    adjustIconSize + adjustTargetPadding * 2
+  /// Width reserved beside the number for each adjustment target. It holds the
+  /// icon and its gap to the number, and sets how wide the number may render.
+  static let minimumAdjustmentTargetWidth: CGFloat = 60
   private static let adjustIconAlpha: CGFloat = 0.3
   private static let adjustIconHiddenScale: CGFloat = 0.5
   private static let adjustIconVisibilityDuration: TimeInterval = 0.16
