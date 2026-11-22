@@ -1080,8 +1080,9 @@ class PlayerCellView: UIView {
   /// Fades out an icon that another seat's readout overlaps. The tap target
   /// underneath is unaffected.
   func setAdjustmentIconsOccluded(minus: Bool, plus: Bool) {
-    let minusAlpha: CGFloat = minus ? 0 : 1
-    let plusAlpha: CGFloat = plus ? 0 : 1
+    // The icon beside this seat's own readout is its sign, so it stays.
+    let minusAlpha: CGFloat = minus && sessionDelta >= 0 ? 0 : 1
+    let plusAlpha: CGFloat = plus && sessionDelta <= 0 ? 0 : 1
     guard minusOcclusionView.alpha != minusAlpha
       || plusOcclusionView.alpha != plusAlpha else { return }
     UIView.animate(

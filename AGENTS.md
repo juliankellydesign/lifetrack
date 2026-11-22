@@ -414,7 +414,9 @@ Important touch behavior:
   them) can spill past the cell edge. `GameBoardView.updateReadoutOcclusion`
   fades out any other seat's minus or plus icon that the readout overlaps, over
   the shared 0.16-second duration, and fades it back when the readout clears or
-  moves away. Only the icon hides; its tap target keeps working. The fade uses
+  moves away. Only the icon hides; its tap target keeps working. The icon
+  beside a seat's own showing readout is that readout's sign and never hides,
+  even when a neighbour's readout overlaps it. The fade uses
   per-icon holder views, so it composes with the icon's own alpha and scale.
 - `GameBoardView` claims the screen-edge gutters around the playable board in
   `point(inside:)` and hit-tests each gutter touch at the nearest board point;
