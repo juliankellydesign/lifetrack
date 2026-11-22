@@ -150,6 +150,7 @@ class GameBoardView: UIView {
 
     for (i, player) in players.enumerated() {
       let cell = PlayerCellView()
+      cell.adjustmentTargetWidth = PlayerCellView.adjustmentTargetWidth(for: layout)
       cell.setSeatColors(player.seatColors, seed: player.id, animated: false)
       cell.setPoisonCounters(player.poisonCounters, animated: false)
       cell.setLifeTotal(
@@ -448,7 +449,7 @@ class GameBoardView: UIView {
     currentSlots = slots
     // Fixed target size, but never larger than the smallest cell can fit, so
     // every cell still shares one uniform dot size.
-    let dotSize = min(Self.uniformDotSize(for: slots), Self.targetDotSize)
+    let dotSize = min(Self.uniformDotSize(for: slots, layout: layout), Self.targetDotSize)
 
     for (i, cell) in cellViews.enumerated() {
       guard i < slots.count else { break }
@@ -499,14 +500,18 @@ class GameBoardView: UIView {
     tapZoneShape.path = tapPath.cgPath
   }
 
-  private static func uniformDotSize(for slots: [Slot]) -> CGFloat {
-    slots.map { slot in
+  private static func uniformDotSize(
+    for slots: [Slot],
+    layout: PlayerLayout
+  ) -> CGFloat {
+    let targetWidth = PlayerCellView.adjustmentTargetWidth(for: layout)
+    return slots.map { slot in
       let swapped = abs(Int(slot.rotationDegrees)) == 90
       let readingWidth = swapped ? slot.frame.height : slot.frame.width
       let readingHeight = swapped ? slot.frame.width : slot.frame.height
       let numberWidth = max(
         1,
-        readingWidth - PlayerCellView.minimumAdjustmentTargetWidth * 2
+        readingWidth - targetWidth * 2
       )
       let numberHeight = max(
         1,

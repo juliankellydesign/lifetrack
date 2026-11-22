@@ -405,7 +405,10 @@ Important touch behavior:
   enters commander mode; a 0.5-second hold opens exact life input. The
   commander-recipient exit target keeps the full number width.
 - Each adjustment target spans the full player-cell height, reserves at least
-  60pt of player-facing width for its 24pt icon and the 20pt gap to the number, and
+  60pt of player-facing width for its 24pt icon and the 20pt gap to the number
+  (the two-player layout reserves `PlayerCellView.twoDigitReadoutWidth` instead:
+  gap, sign icon, 8pt, and the widest two Karl digits, so a readout up to two
+  digits stays inside the cell and the number renders correspondingly narrower), and
   expands from the corresponding cell edge through the adjacent outer third of
   the rendered number, so a near miss toward the number still adjusts life. In
   those overlaps, the adjustment target takes precedence over the life-total

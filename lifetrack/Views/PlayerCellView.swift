@@ -15,6 +15,31 @@ class PlayerCellView: UIView {
   /// Width reserved beside the number for each adjustment target. It holds the
   /// icon and its gap to the number, and sets how wide the number may render.
   static let minimumAdjustmentTargetWidth: CGFloat = 60
+  /// Width that holds a whole two-digit net-change readout beside the number:
+  /// the gap, the sign icon, and the widest pair of digits.
+  static let twoDigitReadoutWidth: CGFloat = {
+    let font = Typography.lifeDelta.uiFont
+    let digits = (0...9).map { digit in
+      ("\(digit)\(digit)" as NSString).size(withAttributes: [.font: font]).width
+    }.max() ?? 0
+    return adjustIconSpacing + ceil(digits) + deltaSpacing + adjustIconSize
+  }()
+
+  /// The two-player layout has room to keep a two-digit readout inside the
+  /// cell, so it reserves that much; denser layouts keep the minimum and let
+  /// the readout spill.
+  static func adjustmentTargetWidth(for layout: PlayerLayout) -> CGFloat {
+    layout == .two
+      ? max(minimumAdjustmentTargetWidth, twoDigitReadoutWidth)
+      : minimumAdjustmentTargetWidth
+  }
+
+  /// Set by the board from the active layout.
+  var adjustmentTargetWidth: CGFloat = PlayerCellView.minimumAdjustmentTargetWidth {
+    didSet {
+      if adjustmentTargetWidth != oldValue { setNeedsLayout() }
+    }
+  }
   private static let adjustIconAlpha: CGFloat = 0.3
   private static let adjustIconHiddenScale: CGFloat = 0.5
   private static let adjustIconVisibilityDuration: TimeInterval = 0.16
@@ -201,7 +226,7 @@ class PlayerCellView: UIView {
     let readingWidth = contentW + Self.contentInset * 2
     let numberWidth = max(
       1,
-      readingWidth - Self.minimumAdjustmentTargetWidth * 2
+      readingWidth - adjustmentTargetWidth * 2
     )
     dotNumberView.frame = CGRect(
       x: contentContainer.bounds.midX - numberWidth / 2,
