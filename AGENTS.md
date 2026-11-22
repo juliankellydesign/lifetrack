@@ -410,10 +410,12 @@ Important touch behavior:
   the rendered number, so a near miss toward the number still adjusts life. In
   those overlaps, the adjustment target takes precedence over the life-total
   gesture target.
-- Each adjustment icon sits 20pt from the rendered number. While the net-change
-  readout shows, the icon and digits on that side close that gap, down to 4pt,
-  only as far as needed to stay inside the player's cell; roomy cells keep the
-  full 20pt.
+- In tight layouts a seat's net-change readout (its digits and the icon beside
+  them) can spill past the cell edge. `GameBoardView.updateReadoutOcclusion`
+  fades out any other seat's minus or plus icon that the readout overlaps, over
+  the shared 0.16-second duration, and fades it back when the readout clears or
+  moves away. Only the icon hides; its tap target keeps working. The fade uses
+  per-icon holder views, so it composes with the icon's own alpha and scale.
 - `GameBoardView` claims the screen-edge gutters around the playable board in
   `point(inside:)` and hit-tests each gutter touch at the nearest board point;
   `PlayerCellView.touchesBegan` clamps the touch location into the cell before

@@ -178,10 +178,30 @@ class GameBoardView: UIView {
         guard let self, let recipient = self.commanderRecipientIndex else { return }
         self.onCommanderDamageChanged?(recipient, player.id, delta)
       }
+      cell.onReadoutFootprintChanged = { [weak self] in
+        self?.updateReadoutOcclusion()
+      }
       addSubview(cell)
       cellViews.append(cell)
     }
     setNeedsLayout()
+  }
+
+  /// In tight layouts a seat's net-change readout can spill onto the adjoining
+  /// seat's minus or plus icon; that icon fades out until the readout clears.
+  private func updateReadoutOcclusion() {
+    let footprints = cellViews.map { $0.readoutFootprint(in: self) }
+    for (index, cell) in cellViews.enumerated() {
+      let icons = cell.adjustmentIconFrames(in: self)
+      var minusOccluded = false
+      var plusOccluded = false
+      for (other, footprint) in footprints.enumerated() where other != index {
+        guard let footprint else { continue }
+        minusOccluded = minusOccluded || footprint.intersects(icons.minus)
+        plusOccluded = plusOccluded || footprint.intersects(icons.plus)
+      }
+      cell.setAdjustmentIconsOccluded(minus: minusOccluded, plus: plusOccluded)
+    }
   }
 
   func updatePlayer(

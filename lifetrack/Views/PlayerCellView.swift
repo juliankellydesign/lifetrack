@@ -12,8 +12,6 @@ class PlayerCellView: UIView {
   /// 20×20 icons, 20pt gap from the digits, dimmed to 30% opacity.
   private static let adjustIconSize: CGFloat = 24
   private static let adjustIconSpacing: CGFloat = 20
-  /// Smallest gap the net-change readout may close to in a tight cell.
-  private static let adjustIconMinimumSpacing: CGFloat = 4
   /// Width reserved beside the number for each adjustment target. It holds the
   /// icon and its gap to the number, and sets how wide the number may render.
   static let minimumAdjustmentTargetWidth: CGFloat = 60
@@ -48,6 +46,9 @@ class PlayerCellView: UIView {
   var onCommanderModeRequested: (() -> Void)?
   var onCommanderModeExitRequested: (() -> Void)?
   var onCommanderDamageAdjust: ((_ delta: Int) -> Void)?
+  /// The area covered by this cell's net-change readout appeared, moved, or
+  /// went away.
+  var onReadoutFootprintChanged: (() -> Void)?
   var isBeingEdited: Bool = false {
     didSet {
       guard isBeingEdited != oldValue else { return }
@@ -69,6 +70,11 @@ class PlayerCellView: UIView {
   private let commanderRecipientIcon = UIImageView()
   private let minusIcon = UIImageView()
   private let plusIcon = UIImageView()
+  /// Full-size holders for the icons. Their alpha hides an icon that another
+  /// seat's net-change readout has spilled onto, independently of the icon's
+  /// own alpha and scale.
+  private let minusOcclusionView = UIView()
+  private let plusOcclusionView = UIView()
   private let poisonCounterView = PoisonCounterView()
   private var adjustmentIconsVisible = true
   private var firstPlayerChromeVisible = true
@@ -138,8 +144,8 @@ class PlayerCellView: UIView {
     commanderRecipientIcon.isUserInteractionEnabled = false
     commanderRecipientIcon.isAccessibilityElement = false
     numberPressContainer.addSubview(commanderRecipientIcon)
-    configureAdjustIcon(minusIcon, named: "IconMinusBold")
-    configureAdjustIcon(plusIcon, named: "IconPlusBold")
+    configureAdjustIcon(minusIcon, named: "IconMinusBold", in: minusOcclusionView)
+    configureAdjustIcon(plusIcon, named: "IconPlusBold", in: plusOcclusionView)
     poisonCounterView.prepare(value: 0, isInteractive: false)
     poisonCounterView.isHidden = true
     contentContainer.addSubview(poisonCounterView)
@@ -153,13 +159,19 @@ class PlayerCellView: UIView {
     contentContainer.addSubview(deltaView)
   }
 
-  private func configureAdjustIcon(_ iconView: UIImageView, named: String) {
+  private func configureAdjustIcon(
+    _ iconView: UIImageView,
+    named: String,
+    in occlusionView: UIView
+  ) {
+    occlusionView.isUserInteractionEnabled = false
+    contentContainer.addSubview(occlusionView)
     iconView.image = UIImage(named: named)?.withRenderingMode(.alwaysTemplate)
     iconView.tintColor = .white
     iconView.alpha = Self.adjustIconAlpha
     iconView.contentMode = .scaleAspectFit
     iconView.isUserInteractionEnabled = false
-    contentContainer.addSubview(iconView)
+    occlusionView.addSubview(iconView)
   }
 
   override func layoutSubviews() {
@@ -198,6 +210,8 @@ class PlayerCellView: UIView {
       height: contentH
     )
     dotNumberView.layoutIfNeeded()
+    minusOcclusionView.frame = contentContainer.bounds
+    plusOcclusionView.frame = contentContainer.bounds
 
     // ± icons flank the rendered number (minus left, plus right), vertically
     // centered on it, with a fixed 20pt gap — placed in the rotated content
@@ -229,25 +243,14 @@ class PlayerCellView: UIView {
     let dGap = Self.deltaSpacing
     let labelY = numRect.midY - dH / 2
 
-    // In a tight cell the readout side closes its gap to the number, down to
-    // the minimum, before the icon or digits spill into the adjoining cell.
-    let readoutWidth = iconSize + dGap + dW
-    let cellMinX = contentContainer.bounds.minX - Self.contentInset
-    let cellMaxX = contentContainer.bounds.maxX + Self.contentInset
-    func readoutGap(room: CGFloat) -> CGFloat {
-      min(gap, max(Self.adjustIconMinimumSpacing, room - readoutWidth))
-    }
-
-    // A positive readout slots in outboard of the plus icon (to its right).
-    let plusX = numRect.maxX
-      + (sessionDelta > 0 ? readoutGap(room: cellMaxX - numRect.maxX) : gap)
+    // Plus icon never moves — a positive readout slots in outboard (to its right).
+    let plusX = numRect.maxX + gap
     placeAdjustmentIcon(plusIcon, x: plusX, y: iconY)
 
     if sessionDelta < 0 {
       // Negative: the digits go between the minus icon and the number, so the
       // minus icon slides left to open that room (animated by registerDelta).
-      let labelX = numRect.minX
-        - readoutGap(room: numRect.minX - cellMinX) - dW
+      let labelX = numRect.minX - gap - dW
       deltaView.frame = CGRect(x: labelX, y: labelY, width: dW, height: dH)
       placeAdjustmentIcon(
         minusIcon,
@@ -1052,7 +1055,53 @@ class PlayerCellView: UIView {
       self.minusIcon.alpha = positive ? Self.adjustIconAlpha : 1
     }
     scheduleDeltaIdle()
+    onReadoutFootprintChanged?()
     return sessionDelta
+  }
+
+  /// The area in `view` covered by the showing readout: its digits plus the
+  /// icon beside them, at their laid-out positions. Nil when no readout shows.
+  func readoutFootprint(in view: UIView) -> CGRect? {
+    guard sessionDelta != 0 else { return nil }
+    let icon = sessionDelta > 0 ? plusIcon : minusIcon
+    return contentContainer.convert(
+      Self.layoutFrame(of: icon).union(deltaView.frame),
+      to: view
+    )
+  }
+
+  func adjustmentIconFrames(in view: UIView) -> (minus: CGRect, plus: CGRect) {
+    (
+      contentContainer.convert(Self.layoutFrame(of: minusIcon), to: view),
+      contentContainer.convert(Self.layoutFrame(of: plusIcon), to: view)
+    )
+  }
+
+  /// Fades out an icon that another seat's readout overlaps. The tap target
+  /// underneath is unaffected.
+  func setAdjustmentIconsOccluded(minus: Bool, plus: Bool) {
+    let minusAlpha: CGFloat = minus ? 0 : 1
+    let plusAlpha: CGFloat = plus ? 0 : 1
+    guard minusOcclusionView.alpha != minusAlpha
+      || plusOcclusionView.alpha != plusAlpha else { return }
+    UIView.animate(
+      withDuration: Self.adjustIconVisibilityDuration,
+      delay: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]
+    ) {
+      self.minusOcclusionView.alpha = minusAlpha
+      self.plusOcclusionView.alpha = plusAlpha
+    }
+  }
+
+  /// An icon's frame in the content container, ignoring its scale transform.
+  private static func layoutFrame(of icon: UIView) -> CGRect {
+    CGRect(
+      x: icon.center.x - icon.bounds.width / 2,
+      y: icon.center.y - icon.bounds.height / 2,
+      width: icon.bounds.width,
+      height: icon.bounds.height
+    )
   }
 
   /// Width of the current magnitude, measured from the Karl `lifeDelta` font so
@@ -1091,6 +1140,7 @@ class PlayerCellView: UIView {
       self.minusIcon.alpha = Self.adjustIconAlpha
       self.plusIcon.alpha = Self.adjustIconAlpha
     }
+    onReadoutFootprintChanged?()
   }
 
   /// Tear down the session immediately (no animation) — for edit/reset.
@@ -1105,6 +1155,7 @@ class PlayerCellView: UIView {
       plusIcon.alpha = Self.adjustIconAlpha
     }
     setNeedsLayout()
+    onReadoutFootprintChanged?()
   }
 
   // MARK: - Swipe-to-reset sweep
