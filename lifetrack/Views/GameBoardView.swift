@@ -150,6 +150,7 @@ class GameBoardView: UIView {
 
     for (i, player) in players.enumerated() {
       let cell = PlayerCellView()
+      cell.adjustmentTargetWidth = PlayerCellView.adjustmentTargetWidth(for: layout)
       cell.setSeatColors(player.seatColors, seed: player.id, animated: false)
       cell.setPoisonCounters(player.poisonCounters, animated: false)
       cell.setLifeTotal(
@@ -178,10 +179,30 @@ class GameBoardView: UIView {
         guard let self, let recipient = self.commanderRecipientIndex else { return }
         self.onCommanderDamageChanged?(recipient, player.id, delta)
       }
+      cell.onReadoutFootprintChanged = { [weak self] in
+        self?.updateReadoutOcclusion()
+      }
       addSubview(cell)
       cellViews.append(cell)
     }
     setNeedsLayout()
+  }
+
+  /// In tight layouts a seat's net-change readout can spill onto the adjoining
+  /// seat's minus or plus icon; that icon fades out until the readout clears.
+  private func updateReadoutOcclusion() {
+    let footprints = cellViews.map { $0.readoutFootprint(in: self) }
+    for (index, cell) in cellViews.enumerated() {
+      let icons = cell.adjustmentIconFrames(in: self)
+      var minusOccluded = false
+      var plusOccluded = false
+      for (other, footprint) in footprints.enumerated() where other != index {
+        guard let footprint else { continue }
+        minusOccluded = minusOccluded || footprint.intersects(icons.minus)
+        plusOccluded = plusOccluded || footprint.intersects(icons.plus)
+      }
+      cell.setAdjustmentIconsOccluded(minus: minusOccluded, plus: plusOccluded)
+    }
   }
 
   func updatePlayer(
@@ -428,7 +449,7 @@ class GameBoardView: UIView {
     currentSlots = slots
     // Fixed target size, but never larger than the smallest cell can fit, so
     // every cell still shares one uniform dot size.
-    let dotSize = min(Self.uniformDotSize(for: slots), Self.targetDotSize)
+    let dotSize = min(Self.uniformDotSize(for: slots, layout: layout), Self.targetDotSize)
 
     for (i, cell) in cellViews.enumerated() {
       guard i < slots.count else { break }
@@ -479,14 +500,18 @@ class GameBoardView: UIView {
     tapZoneShape.path = tapPath.cgPath
   }
 
-  private static func uniformDotSize(for slots: [Slot]) -> CGFloat {
-    slots.map { slot in
+  private static func uniformDotSize(
+    for slots: [Slot],
+    layout: PlayerLayout
+  ) -> CGFloat {
+    let targetWidth = PlayerCellView.adjustmentTargetWidth(for: layout)
+    return slots.map { slot in
       let swapped = abs(Int(slot.rotationDegrees)) == 90
       let readingWidth = swapped ? slot.frame.height : slot.frame.width
       let readingHeight = swapped ? slot.frame.width : slot.frame.height
       let numberWidth = max(
         1,
-        readingWidth - PlayerCellView.minimumAdjustmentTargetWidth * 2
+        readingWidth - targetWidth * 2
       )
       let numberHeight = max(
         1,
